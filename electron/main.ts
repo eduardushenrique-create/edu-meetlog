@@ -6,10 +6,20 @@ let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
 let isRecording = false;
 
+function getBackendPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'backend', 'main.py');
+  }
+  return path.join(__dirname, '..', 'backend', 'main.py');
+}
+
 function startBackend() {
-  const backendPath = path.join(__dirname, '..', 'backend', 'main.py');
+  const backendPath = getBackendPath();
+  console.log('Starting backend from:', backendPath);
+  
   pythonProcess = spawn('python', [backendPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: app.isPackaged ? path.dirname(backendPath) : undefined,
   });
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"npm run electron:dev\"",
     "electron:dev": "electron .",
-    "build": "tsc && vite build && npm run electron:build",
+    "build": "tsc -p tsconfig.electron.json && vite build",
     "electron:build": "tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder",
     "preview": "vite preview"
@@ -44,20 +44,29 @@
   "build": {
     "appId": "com.edumeetlog.app",
     "productName": "Edu MeetLog",
+    "asar": true,
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "backend/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
     }
   }
 }

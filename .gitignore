@@ -26,4 +26,8 @@ Thumbs.db
 recordings/
 transcripts/
 queue/
+
+# Release (use GitHub Releases)
+release/
+
 *.log

@@ -39,10 +39,18 @@ const child_process_1 = require("child_process");
 let mainWindow = null;
 let pythonProcess = null;
 let isRecording = false;
+function getBackendPath() {
+    if (electron_1.app.isPackaged) {
+        return path.join(process.resourcesPath, 'backend', 'main.py');
+    }
+    return path.join(__dirname, '..', 'backend', 'main.py');
+}
 function startBackend() {
-    const backendPath = path.join(__dirname, '..', 'backend', 'main.py');
+    const backendPath = getBackendPath();
+    console.log('Starting backend from:', backendPath);
     pythonProcess = (0, child_process_1.spawn)('python', [backendPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: electron_1.app.isPackaged ? path.dirname(backendPath) : undefined,
     });
     pythonProcess.stdout?.on('data', (data) => {
         console.log(`Backend: ${data}`);
