@@ -13,6 +13,13 @@ function getBackendPath(): string {
   return path.join(__dirname, '..', 'backend', 'main.py');
 }
 
+function getHTMLPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html');
+  }
+  return path.join(__dirname, '..', 'dist', 'index.html');
+}
+
 function startBackend() {
   const backendPath = getBackendPath();
   console.log('Starting backend from:', backendPath);
@@ -85,11 +92,16 @@ function createWindow() {
     },
   });
 
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
+  const htmlPath = getHTMLPath();
+  console.log('Loading HTML from:', htmlPath);
+
+  const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5174');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(htmlPath);
   }
 
   mainWindow.on('closed', () => {
