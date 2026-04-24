@@ -1,7 +1,28 @@
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
+import { spawn, ChildProcess } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
+let pythonProcess: ChildProcess | null = null;
+
+function startBackend() {
+  const backendPath = path.join(__dirname, '..', 'backend', 'main.py');
+  pythonProcess = spawn('python', [backendPath], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  pythonProcess.stdout?.on('data', (data: Buffer) => {
+    console.log(`Backend: ${data}`);
+  });
+
+  pythonProcess.stderr?.on('data', (data: Buffer) => {
+    console.error(`Backend Error: ${data}`);
+  });
+
+  pythonProcess.on('close', (code: number | null) => {
+    console.log(`Backend closed with code ${code}`);
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -29,9 +50,15 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  startBackend();
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
+  if (pythonProcess) {
+    pythonProcess.kill();
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }

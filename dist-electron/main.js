@@ -35,7 +35,24 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
+const child_process_1 = require("child_process");
 let mainWindow = null;
+let pythonProcess = null;
+function startBackend() {
+    const backendPath = path.join(__dirname, '..', 'backend', 'main.py');
+    pythonProcess = (0, child_process_1.spawn)('python', [backendPath], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    pythonProcess.stdout?.on('data', (data) => {
+        console.log(`Backend: ${data}`);
+    });
+    pythonProcess.stderr?.on('data', (data) => {
+        console.error(`Backend Error: ${data}`);
+    });
+    pythonProcess.on('close', (code) => {
+        console.log(`Backend closed with code ${code}`);
+    });
+}
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
         width: 900,
@@ -60,8 +77,14 @@ function createWindow() {
         mainWindow = null;
     });
 }
-electron_1.app.whenReady().then(createWindow);
+electron_1.app.whenReady().then(() => {
+    startBackend();
+    createWindow();
+});
 electron_1.app.on('window-all-closed', () => {
+    if (pythonProcess) {
+        pythonProcess.kill();
+    }
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
     }
