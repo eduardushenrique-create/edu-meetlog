@@ -1,0 +1,63 @@
+{
+  "name": "edu-meetlog",
+  "version": "1.0.0",
+  "description": "Aplicação desktop local para captura de áudio e transcrição offline de reuniões",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"npm run electron:dev\"",
+    "electron:dev": "electron .",
+    "build": "tsc && vite build && npm run electron:build",
+    "electron:build": "tsc -p tsconfig.electron.json",
+    "dist": "npm run build && electron-builder",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eduardushenrique-create/edu-meetlog.git"
+  },
+  "keywords": [
+    "audio",
+    "transcription",
+    "meeting",
+    "desktop"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.5.0",
+    "concurrently": "^9.2.1",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "build": {
+    "appId": "com.edumeetlog.app",
+    "productName": "Edu MeetLog",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
