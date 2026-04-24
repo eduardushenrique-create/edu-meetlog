@@ -1,0 +1,152 @@
+📄 DOCUMENTAÇÃO — Edu MeetLog
+________________________________________
+1. VISÃO GERAL
+1.1 Objetivo
+O Edu MeetLog é uma aplicação desktop local para:
+•	Captura de áudio (microfone + sistema) 
+•	Transcrição offline de reuniões 
+•	Armazenamento local 
+•	Visualização simples 
+________________________________________
+1.2 Características
+•	100% local 
+•	Operação contínua (4–5h/dia) 
+•	Interface minimalista 
+•	Processamento assíncrono 
+________________________________________
+2. ARQUITETURA
+2.1 Componentes
+•	UI Desktop (React + Tauri) 
+•	Backend (FastAPI) 
+•	Captura de áudio 
+•	Worker de transcrição 
+•	Armazenamento local 
+________________________________________
+2.2 Fluxo
+Captura → Arquivos → Fila → Transcrição → Armazenamento → UI
+________________________________________
+3. CAPTURA DE ÁUDIO
+3.1 Fontes
+•	Microfone 
+•	Sistema (loopback) 
+________________________________________
+3.2 Estratégia
+•	Captura paralela 
+•	Segmentação (5 min) 
+•	Sincronização por timestamp 
+________________________________________
+4. TRANSCRIÇÃO
+4.1 Tecnologia
+•	Whisper local (faster-whisper) 
+________________________________________
+4.2 Configuração
+•	Modelo: large-v3 
+•	Processamento pós-gravação 
+________________________________________
+5. ARMAZENAMENTO
+Estrutura
+recordings/
+transcripts/
+________________________________________
+Formato
+{
+  "start": 0.0,
+  "end": 3.2,
+  "speaker": "user",
+  "text": "..."
+}
+________________________________________
+6. FILA DE PROCESSAMENTO
+Estrutura
+queue/
+  pending/
+  processing/
+  done/
+  failed/
+________________________________________
+Configuração
+•	2 workers 
+•	Retry até 3x 
+________________________________________
+7. INTERFACE DO USUÁRIO
+7.1 Telas
+•	Dashboard 
+•	Meetings 
+•	Transcription 
+•	Settings 
+________________________________________
+7.2 Dashboard
+•	Status (Recording / Stopped) 
+•	Timer 
+•	Botão Start/Stop 
+•	Queue info 
+________________________________________
+7.3 Meetings
+•	Lista simples 
+•	Clique → abrir 
+________________________________________
+7.4 Transcription
+[00:00] USER: texto  
+[00:03] OTHER: texto  
+________________________________________
+7.5 Settings
+•	Mic ON/OFF 
+•	System ON/OFF 
+•	Model select 
+•	Workers 
+•	Auto-start 
+________________________________________
+8. HOTKEYS
+•	CTRL + ALT + R → Start/Stop 
+•	CTRL + ALT + S → Abrir app 
+________________________________________
+9. ESTADOS
+•	IDLE 
+•	RECORDING 
+•	PROCESSING 
+•	ERROR 
+________________________________________
+10. API
+Start
+POST /recording/start
+Stop
+POST /recording/stop
+Status
+GET /status
+________________________________________
+11. UI BASE (React)
+import { useState } from "react";
+
+export default function App() {
+  const [tab, setTab] = useState("dashboard");
+  const [recording, setRecording] = useState(false);
+
+  return (
+    <div className="flex h-screen bg-black text-white">
+      <div className="w-56 p-4">
+        <h1>Edu MeetLog</h1>
+        <button onClick={() => setTab("dashboard")}>Dashboard</button>
+        <button onClick={() => setTab("meetings")}>Meetings</button>
+        <button onClick={() => setTab("settings")}>Settings</button>
+      </div>
+
+      <div className="flex-1 p-6">
+        {tab === "dashboard" && (
+          <>
+            <div>{recording ? "Recording" : "Stopped"}</div>
+            <button onClick={() => setRecording(!recording)}>
+              {recording ? "Stop" : "Start"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+________________________________________
+12. CRITÉRIOS DE ACEITAÇÃO
+•	Start/Stop funcional 
+•	Suporte a 5h contínuas 
+•	Transcrição offline 
+•	UI responsiva
+
