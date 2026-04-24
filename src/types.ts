@@ -43,6 +43,7 @@ export interface ElectronAPI {
   getTranscript: (meetingId: string) => Promise<{ segments: TranscriptSegment[] }>;
   getSettings: () => Promise<Settings>;
   updateSettings: (settings: Settings) => Promise<{ success: boolean; message: string }>;
+  onRecordingToggle: (callback: (recording: boolean) => void) => void;
 }
 
 declare global {

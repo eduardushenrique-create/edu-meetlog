@@ -14,4 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings)
   }).then(r => r.json()),
+  onRecordingToggle: (callback: (recording: boolean) => void) => {
+    ipcRenderer.on('recording-toggle', (_event, recording) => callback(recording));
+  },
 });

@@ -98,6 +98,18 @@ export default function App() {
     if (selectedMeeting) fetchTranscript(selectedMeeting);
   }, [selectedMeeting]);
 
+  useEffect(() => {
+    window.electronAPI.onRecordingToggle((recording: boolean) => {
+      if (recording !== isRecording) {
+        if (recording) {
+          startRecording();
+        } else {
+          stopRecording();
+        }
+      }
+    });
+  }, [isRecording]);
+
   const isRecording = status?.state === 'RECORDING';
 
   return (

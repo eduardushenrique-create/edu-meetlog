@@ -38,6 +38,7 @@ const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 let mainWindow = null;
 let pythonProcess = null;
+let isRecording = false;
 function startBackend() {
     const backendPath = path.join(__dirname, '..', 'backend', 'main.py');
     pythonProcess = (0, child_process_1.spawn)('python', [backendPath], {
@@ -52,6 +53,37 @@ function startBackend() {
     pythonProcess.on('close', (code) => {
         console.log(`Backend closed with code ${code}`);
     });
+}
+function toggleRecording() {
+    isRecording = !isRecording;
+    if (mainWindow) {
+        mainWindow.webContents.send('recording-toggle', isRecording);
+    }
+}
+function showApp() {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) {
+            mainWindow.restore();
+        }
+        mainWindow.show();
+        mainWindow.focus();
+    }
+}
+function registerHotkeys() {
+    const ret1 = electron_1.globalShortcut.register('CommandOrControl+Alt+R', () => {
+        console.log('Hotkey CTRL+ALT+R pressed - Toggle Recording');
+        toggleRecording();
+    });
+    const ret2 = electron_1.globalShortcut.register('CommandOrControl+Alt+S', () => {
+        console.log('Hotkey CTRL+ALT+S pressed - Show App');
+        showApp();
+    });
+    if (!ret1) {
+        console.error('Failed to register CTRL+ALT+R');
+    }
+    if (!ret2) {
+        console.error('Failed to register CTRL+ALT+S');
+    }
 }
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
@@ -80,11 +112,13 @@ function createWindow() {
 electron_1.app.whenReady().then(() => {
     startBackend();
     createWindow();
+    registerHotkeys();
 });
 electron_1.app.on('window-all-closed', () => {
     if (pythonProcess) {
         pythonProcess.kill();
     }
+    electron_1.globalShortcut.unregisterAll();
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
     }
@@ -93,4 +127,7 @@ electron_1.app.on('activate', () => {
     if (mainWindow === null) {
         createWindow();
     }
+});
+electron_1.ipcMain.on('recording-state', (_event, state) => {
+    isRecording = state;
 });

@@ -1,9 +1,10 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
+let isRecording = false;
 
 function startBackend() {
   const backendPath = path.join(__dirname, '..', 'backend', 'main.py');
@@ -22,6 +23,42 @@ function startBackend() {
   pythonProcess.on('close', (code: number | null) => {
     console.log(`Backend closed with code ${code}`);
   });
+}
+
+function toggleRecording() {
+  isRecording = !isRecording;
+  if (mainWindow) {
+    mainWindow.webContents.send('recording-toggle', isRecording);
+  }
+}
+
+function showApp() {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+function registerHotkeys() {
+  const ret1 = globalShortcut.register('CommandOrControl+Alt+R', () => {
+    console.log('Hotkey CTRL+ALT+R pressed - Toggle Recording');
+    toggleRecording();
+  });
+
+  const ret2 = globalShortcut.register('CommandOrControl+Alt+S', () => {
+    console.log('Hotkey CTRL+ALT+S pressed - Show App');
+    showApp();
+  });
+
+  if (!ret1) {
+    console.error('Failed to register CTRL+ALT+R');
+  }
+  if (!ret2) {
+    console.error('Failed to register CTRL+ALT+S');
+  }
 }
 
 function createWindow() {
@@ -53,12 +90,14 @@ function createWindow() {
 app.whenReady().then(() => {
   startBackend();
   createWindow();
+  registerHotkeys();
 });
 
 app.on('window-all-closed', () => {
   if (pythonProcess) {
     pythonProcess.kill();
   }
+  globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -68,4 +107,8 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
   }
+});
+
+ipcMain.on('recording-state', (_event, state: boolean) => {
+  isRecording = state;
 });
