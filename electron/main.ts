@@ -70,21 +70,25 @@ function registerHotkeys() {
     showApp();
   });
 
-  if (!ret1) {
-    console.error('Failed to register CTRL+ALT+R');
-  }
-  if (!ret2) {
-    console.error('Failed to register CTRL+ALT+S');
-  }
+  const ret3 = globalShortcut.register('CommandOrControl+F12', () => {
+    console.log('Hotkey CTRL+F12 pressed - Toggle Recording');
+    toggleRecording();
+  });
+
+  if (!ret1) console.error('Failed to register CTRL+ALT+R');
+  if (!ret2) console.error('Failed to register CTRL+ALT+S');
+  if (!ret3) console.error('Failed to register CTRL+F12');
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 940,
+    height: 620,
     minWidth: 800,
     minHeight: 600,
-    backgroundColor: '#000',
+    frame: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#0a0a0a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -98,8 +102,12 @@ function createWindow() {
   const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5174');
-    mainWindow.webContents.openDevTools();
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html')).then(() => {
+      console.log('Loaded local dist/index.html');
+    }).catch((e) => {
+      console.error('Failed to load local HTML:', e);
+      mainWindow?.loadURL('http://localhost:5174').catch(console.error);
+    });
   } else {
     mainWindow.loadFile(htmlPath);
   }

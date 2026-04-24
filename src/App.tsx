@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import './types';
 
 type Tab = 'dashboard' | 'meetings' | 'transcription' | 'settings';
+
+const API_URL = 'http://127.0.0.1:8000';
 
 function formatTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -14,6 +17,22 @@ function formatSec(s: number): string {
   const m = Math.floor(s / 60).toString().padStart(2, '0');
   const ss = (s % 60).toString().padStart(2, '0');
   return `${m}:${ss}`;
+}
+
+function DarkWindow({ children }: { children: ReactNode }) {
+  return (
+    <div className="dark-window">
+      <div className="dark-window-titlebar">
+        <div className="traffic-lights">
+          {['#ef4444', '#f59e0b', '#22c55e'].map((color) => (
+            <span key={color} className="traffic-light" style={{ background: color }} />
+          ))}
+        </div>
+        <div className="dark-window-title">Edu MeetLog</div>
+      </div>
+      <div className="dark-window-content">{children}</div>
+    </div>
+  );
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -132,7 +151,7 @@ function Dashboard({
   sysEnabled: boolean;
 }) {
   return (
-    <div className="p-7 h-full flex flex-col gap-7">
+    <div className="h-full flex flex-col gap-7" style={{ padding: '28px 32px' }}>
       <div className="flex items-center justify-between">
         <div>
           <div className="text-xs tracking-widest text-gray-600 font-semibold mb-1">STATUS</div>
@@ -173,7 +192,7 @@ function Dashboard({
 
       <div className="flex-1 flex flex-col items-center justify-center gap-5">
         <div
-          className={`font-mono text-5xl font-semibold tracking-widest ${isRecording ? 'text-red-400' : 'text-gray-200'}`}
+          className={`font-mono text-[52px] font-semibold tracking-widest ${isRecording ? 'text-red-400' : 'text-gray-200'}`}
           style={{ lineHeight: 1, letterSpacing: '2px' }}
         >
           {timer}
@@ -186,12 +205,13 @@ function Dashboard({
               style={{
                 border: '2px solid rgba(239,68,68,0.5)',
                 animation: 'pulse-ring 1.4s ease-out infinite',
+                pointerEvents: 'none',
               }}
             />
           )}
-          <button
-            onClick={onToggle}
-            className={`w-22 h-22 rounded-full border-none cursor-pointer flex items-center justify-center transition-all ${
+<button
+            onClick={handleToggleRecording}
+            className={`w-22 h-22 rounded-full border-none cursor-pointer flex items-center justify-center transition-all z-10 ${
               isRecording
                 ? 'bg-gradient-to-br from-red-400 to-red-700 shadow-red-500/30'
                 : 'bg-gradient-to-br from-blue-500 to-blue-700 shadow-blue-500/20'
@@ -199,6 +219,8 @@ function Dashboard({
             style={{
               width: '88px',
               height: '88px',
+              position: 'relative',
+              zIndex: 10,
               boxShadow: isRecording
                 ? '0 0 32px rgba(239,68,68,0.35), 0 4px 20px rgba(0,0,0,0.5)'
                 : '0 0 32px rgba(37,99,235,0.25), 0 4px 20px rgba(0,0,0,0.5)',
@@ -267,7 +289,7 @@ function Meetings({
   onDelete: (id: string) => void;
 }) {
   return (
-    <div className="p-7 h-full flex flex-col">
+    <div className="h-full flex flex-col" style={{ padding: '28px 32px' }}>
       <div className="flex items-center justify-between mb-5">
         <div>
           <div className="text-xs tracking-widest text-gray-600 font-semibold">REUNIÕES</div>
@@ -376,13 +398,38 @@ function Transcription({
 
   const handleCopy = () => {
     const text = segments.map((s) => `[${formatSec(s.start)}] ${s.speaker}: ${s.text}`).join('\n');
-    navigator.clipboard?.writeText(text).catch(() => {});
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).catch(() => {
+          fallbackCopy(text);
+        });
+      } else {
+        fallbackCopy(text);
+      }
+    } catch {
+      fallbackCopy(text);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const fallbackCopy = (text: string) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch {
+      console.error('Copy failed');
+    }
+    document.body.removeChild(textarea);
+  };
+
   return (
-    <div className="p-7 h-full flex flex-col">
+    <div className="h-full flex flex-col" style={{ padding: '28px 32px' }}>
       <div className="mb-5">
         <button
           onClick={onBack}
@@ -478,7 +525,7 @@ function SettingsPanel({
   saved: boolean;
 }) {
   return (
-    <div className="p-7 h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto" style={{ padding: '28px 32px' }}>
       <div className="mb-6">
         <div className="text-xs tracking-widest text-gray-600 font-semibold">CONFIGURAÇÕES</div>
         <div className="text-lg font-semibold mt-0.5">Preferências</div>
@@ -580,6 +627,7 @@ function SettingsPanel({
         <div className="flex flex-col gap-1.5">
           {[
             { keys: '⌃⌥R', desc: 'Iniciar / Parar gravação' },
+            { keys: '⌃F12', desc: 'Parar gravação' },
             { keys: '⌃⌥S', desc: 'Abrir aplicativo' },
           ].map((h) => (
             <div
@@ -617,8 +665,9 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [isRecording, setIsRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [meetings, setMeetings] = useState<Meeting[]>(MOCK_MEETINGS);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [meetingSegments, setMeetingSegments] = useState<Segment[]>([]);
   const [settings, setSettings] = useState<SettingsState>({
     mic_enabled: true,
     system_enabled: true,
@@ -627,30 +676,150 @@ export default function App() {
     auto_start: false,
   });
   const [saved, setSaved] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [status, setStatus] = useState({ pending: 0, processing: 0, done: 0, failed: 0 });
 
-  const status = { pending: 1, processing: 0, done: 28, failed: 1 };
+  const isRecordingRef = useRef(false);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch(`${API_URL}/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsRecording(data.state === 'RECORDING');
+        setSeconds(Math.floor(data.recording_duration));
+        setStatus(data.queue_stats);
+      }
+    } catch (e) {
+      console.error('API not reachable');
+    }
+  };
+
+  const fetchMeetings = async () => {
+    try {
+      const res = await fetch(`${API_URL}/meetings`);
+      if (res.ok) {
+        const data = await res.json();
+        setMeetings(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const performToggle = async () => {
+    const current = isRecordingRef.current;
+    console.log('performToggle called, current state:', current);
+    try {
+      const endpoint = current ? 'stop' : 'start';
+      const url = `${API_URL}/recording/${endpoint}`;
+      console.log('Calling API:', url);
+      
+      const res = await fetch(url, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: current ? undefined : JSON.stringify({
+          mic_enabled: settingsRef.current.mic_enabled,
+          system_enabled: settingsRef.current.system_enabled,
+          segment_duration: 300
+        })
+      });
+      
+      console.log('Response status:', res.status);
+      const data = await res.json();
+      console.log('Response data:', data);
+      
+      fetchStatus();
+    } catch (e) {
+      console.error('Error in performToggle:', e);
+    }
+  };
+
+  const handleToggleRecording = () => {
+    console.log('Button clicked, isRecording:', isRecordingRef.current);
+    performToggle();
+  };
 
   useEffect(() => {
-    if (isRecording) {
-      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (seconds > 0) setSeconds(0);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (window.electronAPI?.onRecordingToggle) {
+      window.electronAPI.onRecordingToggle((recording: boolean) => {
+        setIsRecording(recording);
+        if (!recording) setSeconds(0);
+      });
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'F12') {
+        e.preventDefault();
+        performToggle();
+      }
     };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'meetings') {
+      fetchMeetings();
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    const loadInitSettings = async () => {
+      try {
+        const res = await fetch(`${API_URL}/settings`);
+        if (res.ok) {
+          const data = await res.json();
+          setSettings(data);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadInitSettings();
+  }, []);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
   }, [isRecording]);
 
   const timer = formatTime(seconds);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    try {
+      await fetch(`${API_URL}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const openMeeting = (m: Meeting) => {
+  const openMeeting = async (m: Meeting) => {
+    try {
+      const res = await fetch(`${API_URL}/transcripts/${m.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMeetingSegments(data.segments || []);
+      } else {
+        setMeetingSegments([]);
+      }
+    } catch (e) {
+      setMeetingSegments([]);
+    }
     setSelectedMeeting(m);
     setTab('transcription');
   };
@@ -660,10 +829,12 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-black text-white font-sans" style={{ background: '#080808' }}>
+    <div className="app-stage">
+      <DarkWindow>
+        <div className="flex h-full bg-black text-white font-sans" style={{ background: '#080808' }}>
       <div
-        className="w-46 p-4 border-r border-gray-950 flex flex-col"
-        style={{ borderColor: '#141414', background: '#080808', width: '184px', flexShrink: 0 }}
+        className="w-46 border-r border-gray-950 flex flex-col"
+        style={{ borderColor: '#141414', background: '#080808', width: '184px', flexShrink: 0, padding: '16px 10px' }}
       >
         <div className="mb-5 pl-2.5">
           <div className="text-sm font-bold text-gray-200" style={{ letterSpacing: '-0.01em' }}>
@@ -725,7 +896,7 @@ export default function App() {
             isRecording={isRecording}
             timer={timer}
             status={status}
-            onToggle={() => setIsRecording((r) => !r)}
+            onToggle={handleToggleRecording}
             micEnabled={settings.mic_enabled}
             sysEnabled={settings.system_enabled}
           />
@@ -736,7 +907,7 @@ export default function App() {
         {tab === 'transcription' && (
           <Transcription
             meeting={selectedMeeting}
-            segments={MOCK_SEGMENTS}
+            segments={meetingSegments}
             onBack={() => {
               setTab('meetings');
               setSelectedMeeting(null);
@@ -752,6 +923,8 @@ export default function App() {
           />
         )}
       </div>
+    </div>
+      </DarkWindow>
     </div>
   );
 }

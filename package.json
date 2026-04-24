@@ -1,7 +1,6 @@
 {
   "name": "edu-meetlog",
   "version": "1.0.0",
-  "type": "module",
   "description": "Aplicação desktop local para captura de áudio e transcrição offline de reuniões",
   "main": "dist-electron/main.js",
   "scripts": {
