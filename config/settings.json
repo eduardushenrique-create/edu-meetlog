@@ -1,0 +1,7 @@
+{
+  "mic_enabled": true,
+  "system_enabled": true,
+  "model": "large-v3",
+  "workers": 8,
+  "auto_start": false
+}

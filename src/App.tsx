@@ -24,9 +24,15 @@ function DarkWindow({ children }: { children: ReactNode }) {
     <div className="dark-window">
       <div className="dark-window-titlebar">
         <div className="traffic-lights">
-          {['#ef4444', '#f59e0b', '#22c55e'].map((color) => (
-            <span key={color} className="traffic-light" style={{ background: color }} />
-          ))}
+          {['#ef4444', '#f59e0b', '#22c55e'].map((color) => {
+            const isClose = color === '#ef4444';
+            const isMinimize = color === '#f59e0b';
+            const isMaximize = color === '#22c55e';
+            const action = isClose ? window.electronAPI?.closeWindow :
+                           isMinimize ? window.electronAPI?.minimizeWindow :
+                           isMaximize ? window.electronAPI?.maximizeWindow : undefined;
+            return <span key={color} className="traffic-light" style={{ background: color, cursor: 'pointer' }} onClick={action} />
+          })}
         </div>
         <div className="dark-window-title">Edu MeetLog</div>
       </div>
@@ -69,8 +75,10 @@ interface Meeting {
 }
 
 interface Segment {
-  id: number;
+  id?: string | number;
   start: number;
+  end?: number;
+  source?: 'mic' | 'system';
   speaker: string;
   text: string;
 }
@@ -142,6 +150,8 @@ function Dashboard({
   onToggle,
   micEnabled,
   sysEnabled,
+  realtimeSegments = [],
+  wsConnected = false,
 }: {
   isRecording: boolean;
   timer: string;
@@ -149,6 +159,8 @@ function Dashboard({
   onToggle: () => void;
   micEnabled: boolean;
   sysEnabled: boolean;
+  realtimeSegments?: Segment[];
+  wsConnected?: boolean;
 }) {
   return (
     <div className="h-full flex flex-col gap-7" style={{ padding: '28px 32px' }}>
@@ -210,7 +222,7 @@ function Dashboard({
             />
           )}
 <button
-            onClick={handleToggleRecording}
+            onClick={onToggle}
             className={`w-22 h-22 rounded-full border-none cursor-pointer flex items-center justify-center transition-all z-10 ${
               isRecording
                 ? 'bg-gradient-to-br from-red-400 to-red-700 shadow-red-500/30'
@@ -275,6 +287,42 @@ function Dashboard({
           ))}
         </div>
       </div>
+
+      {isRecording && (
+        <div>
+          <div className="text-xs tracking-widest text-gray-600 font-semibold mb-2.5">TRANSCRIÇÃO EM TEMPO REAL</div>
+          <div className="bg-gray-950 border border-gray-900 rounded-md p-3 max-h-32 overflow-y-auto">
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}
+              />
+              <span className="text-xs text-gray-600">
+                {wsConnected ? 'Conectado' : 'Desconectado'}
+              </span>
+            </div>
+            {realtimeSegments.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                {realtimeSegments.slice(-5).map((seg, i) => (
+                  <div key={i} className="text-sm">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-xs font-medium mr-1.5 ${
+                        (seg.source || seg.speaker).toLowerCase() === 'system'
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'bg-green-500/20 text-green-400'
+                      }`}
+                    >
+                      {(seg.source || seg.speaker).toUpperCase()}
+                    </span>
+                    <span className="text-gray-300">{seg.text}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-gray-700">Aguardando transcrição...</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -460,44 +508,48 @@ function Transcription({
             >
               {copied ? '✓ Copiado' : 'Copiar'}
             </button>
-            <button
-              className="bg-gray-900 border border-gray-800 text-gray-500 rounded-md px-3 py-1.5 text-xs cursor-pointer font-sans"
-            >
-              Export .txt
-            </button>
-            <button
-              className="bg-gray-900 border border-gray-800 text-gray-500 rounded-md px-3 py-1.5 text-xs cursor-pointer font-sans"
-            >
-              Export .json
-            </button>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto font-mono text-sm flex flex-col gap-0.5">
-        {segments.map((seg) => (
+      <div className="flex gap-3 mb-3">
+        {['user', 'system'].map((speaker) => (
+          <div key={speaker} className="flex items-center gap-1.5">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{
+                background: speaker === 'user' ? '#4ade80' : '#3b82f6',
+              }}
+            />
+            <span className="text-xs text-gray-600 capitalize">{speaker}</span>
+          </div>
+        ))}
+      </div>
+
+<div className="flex-1 overflow-y-auto font-mono text-sm flex flex-col gap-0.5">
+        {segments.map((seg, index) => (
           <div
-            key={seg.id}
+            key={String(seg.id ?? `${seg.source ?? seg.speaker}-${seg.start}-${seg.end ?? seg.start}-${index}`)}
             className="p-1.5 rounded"
             style={{
               borderLeft: `2px solid ${
-                seg.speaker === 'USER'
-                  ? 'rgba(74,222,128,0.3)'
-                  : 'rgba(147,180,252,0.3)'
+                seg.speaker?.toLowerCase() === 'user' || seg.speaker?.toLowerCase() === 'mic'
+                  ? '#4ade80'
+                  : '#3b82f6'
               }`,
-              marginLeft: seg.speaker === 'OTHER' ? '24px' : '0',
+              background: 'rgba(255,255,255,0.02)',
             }}
           >
             <span className="text-gray-700 text-xs mr-2.5">[{formatSec(seg.start)}]</span>
             <span
               className="font-semibold mr-2 text-xs"
               style={{
-                color: seg.speaker === 'USER' ? '#4ade80' : '#93b4fc',
+                color: seg.speaker?.toLowerCase() === 'user' || seg.speaker?.toLowerCase() === 'mic' ? '#4ade80' : '#3b82f6',
               }}
             >
-              {seg.speaker}:
+              {seg.speaker?.toUpperCase() || 'SPEAKER'}
             </span>
-            <span className="text-gray-400">{seg.text}</span>
+<span className="text-gray-300">{seg.text}</span>
           </div>
         ))}
       </div>
@@ -677,6 +729,8 @@ export default function App() {
   });
   const [saved, setSaved] = useState(false);
   const [status, setStatus] = useState({ pending: 0, processing: 0, done: 0, failed: 0 });
+  const [realtimeSegments, setRealtimeSegments] = useState<Segment[]>([]);
+  const [wsConnected, setWsConnected] = useState(false);
 
   const isRecordingRef = useRef(false);
   const settingsRef = useRef(settings);
@@ -712,7 +766,7 @@ export default function App() {
     const current = isRecordingRef.current;
     console.log('performToggle called, current state:', current);
     try {
-      const endpoint = current ? 'stop' : 'start';
+      const endpoint = current ? 'finalize' : 'start';
       const url = `${API_URL}/recording/${endpoint}`;
       console.log('Calling API:', url);
       
@@ -731,6 +785,11 @@ export default function App() {
       console.log('Response data:', data);
       
       fetchStatus();
+      if (current) {
+        fetchMeetings();
+      } else {
+        setRealtimeSegments([]);
+      }
     } catch (e) {
       console.error('Error in performToggle:', e);
     }
@@ -774,6 +833,26 @@ export default function App() {
   }, [tab]);
 
   useEffect(() => {
+    if (isRecording) {
+      const ws = new WebSocket('ws://127.0.0.1:8000/ws/transcription');
+      ws.onopen = () => setWsConnected(true);
+      ws.onclose = () => setWsConnected(false);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const merged = data.final_transcript?.segments;
+          if (Array.isArray(merged)) {
+            setRealtimeSegments(merged);
+          }
+        } catch (e) {}
+      };
+      return () => ws.close();
+    } else {
+      setWsConnected(false);
+    }
+  }, [isRecording]);
+
+  useEffect(() => {
     const loadInitSettings = async () => {
       try {
         const res = await fetch(`${API_URL}/settings`);
@@ -813,7 +892,8 @@ export default function App() {
       const res = await fetch(`${API_URL}/transcripts/${m.id}`);
       if (res.ok) {
         const data = await res.json();
-        setMeetingSegments(data.segments || []);
+        const mergedSegments = data.final_transcript?.segments || [];
+        setMeetingSegments(mergedSegments);
       } else {
         setMeetingSegments([]);
       }
@@ -899,6 +979,8 @@ export default function App() {
             onToggle={handleToggleRecording}
             micEnabled={settings.mic_enabled}
             sysEnabled={settings.system_enabled}
+            realtimeSegments={realtimeSegments}
+            wsConnected={wsConnected}
           />
         )}
         {tab === 'meetings' && (

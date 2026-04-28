@@ -1,0 +1,65 @@
+[
+  {
+    "id": "meeting_0e21588b",
+    "name": "Reuniao 26 Apr, 20:45",
+    "date": "26 Apr, 20:45",
+    "duration": "0:23",
+    "status": "pending",
+    "segments": 1,
+    "wav_file": "2026-04-26_204449_mic.wav"
+  },
+  {
+    "id": "meeting_9e7dcb38",
+    "name": "Reuniao 26 Apr, 20:42",
+    "date": "26 Apr, 20:42",
+    "duration": "0:09",
+    "status": "pending",
+    "segments": 1,
+    "wav_file": "2026-04-26_204248_mic.wav"
+  },
+  {
+    "id": "meeting_6a474a42",
+    "name": "Reuniao 26 Apr, 20:40",
+    "date": "26 Apr, 20:40",
+    "duration": "0:06",
+    "status": "pending",
+    "segments": 1,
+    "wav_file": "2026-04-26_204020_mixed.wav, 2026-04-26_204020_system.wav, 2026-04-26_204020_mic.wav"
+  },
+  {
+    "id": "meeting_b65e2282",
+    "name": "Reuniao 26 Apr, 20:39",
+    "date": "26 Apr, 20:39",
+    "duration": "0:16",
+    "status": "pending",
+    "segments": 1,
+    "wav_file": "2026-04-26_203928_mixed.wav, 2026-04-26_203928_system.wav, 2026-04-26_203928_mic.wav"
+  },
+  {
+    "id": "meeting_07205203",
+    "name": "Reuni\u00e3o 26 Apr, 18:26",
+    "date": "26 Apr, 18:26",
+    "duration": "0:06",
+    "status": "pending",
+    "segments": 8,
+    "wav_file": "2026-04-24_115500_mic.wav, 2026-04-24_120153_mixed.wav, 2026-04-26_165502_mic.wav, 2026-04-26_165523_system.wav, 2026-04-26_165549_mic.wav, 2026-04-26_165549_system.wav, 2026-04-26_165549_mixed.wav, 2026-04-26_182508_mic.wav, 2026-04-26_182508_system.wav, 2026-04-26_182508_mixed.wav, 2026-04-26_182540_mic.wav, 2026-04-26_182540_system.wav, 2026-04-26_182540_mixed.wav, 2026-04-26_182644_mic.wav, 2026-04-26_182644_system.wav, 2026-04-26_182644_mixed.wav"
+  },
+  {
+    "id": "meeting_4b3a0ca0",
+    "name": "Reuni\u00e3o 26 Apr, 18:25",
+    "date": "26 Apr, 18:25",
+    "duration": "0:09",
+    "status": "pending",
+    "segments": 7,
+    "wav_file": "2026-04-24_115500_mic.wav, 2026-04-24_120153_mixed.wav, 2026-04-26_165502_mic.wav, 2026-04-26_165523_system.wav, 2026-04-26_165549_mic.wav, 2026-04-26_165549_system.wav, 2026-04-26_165549_mixed.wav, 2026-04-26_182508_mic.wav, 2026-04-26_182508_system.wav, 2026-04-26_182508_mixed.wav, 2026-04-26_182540_mic.wav, 2026-04-26_182540_system.wav, 2026-04-26_182540_mixed.wav"
+  },
+  {
+    "id": "meeting_8a486d63",
+    "name": "Reuni\u00e3o 26 Apr, 18:25",
+    "date": "26 Apr, 18:25",
+    "duration": "0:06",
+    "status": "pending",
+    "segments": 6,
+    "wav_file": "2026-04-24_115500_mic.wav, 2026-04-24_120153_mixed.wav, 2026-04-26_165502_mic.wav, 2026-04-26_165523_system.wav, 2026-04-26_165549_mic.wav, 2026-04-26_165549_system.wav, 2026-04-26_165549_mixed.wav, 2026-04-26_182508_mic.wav, 2026-04-26_182508_system.wav, 2026-04-26_182508_mixed.wav"
+  }
+]

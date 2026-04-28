@@ -28,10 +28,11 @@ export interface Meeting {
 }
 
 export interface TranscriptSegment {
-  id: number;
+  id?: number | string;
   start: number;
   end: number;
-  speaker: 'user' | 'other';
+  source: 'mic' | 'system';
+  speaker: string;
   text: string;
 }
 
@@ -40,10 +41,17 @@ export interface ElectronAPI {
   stopRecording: () => Promise<{ success: boolean; message: string; duration?: number }>;
   getStatus: () => Promise<Status>;
   getMeetings: () => Promise<Meeting[]>;
-  getTranscript: (meetingId: string) => Promise<{ segments: TranscriptSegment[] }>;
+  getTranscript: (meetingId: string) => Promise<{
+    final_transcript?: { segments: TranscriptSegment[] };
+    segments: TranscriptSegment[];
+    complete?: boolean;
+  }>;
   getSettings: () => Promise<Settings>;
   updateSettings: (settings: Settings) => Promise<{ success: boolean; message: string }>;
   onRecordingToggle: (callback: (recording: boolean) => void) => void;
+  minimizeWindow: () => void;
+  maximizeWindow: () => void;
+  closeWindow: () => void;
 }
 
 declare global {

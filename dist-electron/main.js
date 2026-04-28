@@ -83,6 +83,26 @@ function showApp() {
         mainWindow.focus();
     }
 }
+function closeApp() {
+    if (mainWindow) {
+        mainWindow.close();
+    }
+}
+function minimizeApp() {
+    if (mainWindow) {
+        mainWindow.minimize();
+    }
+}
+function maximizeApp() {
+    if (mainWindow) {
+        if (mainWindow.isMaximized()) {
+            mainWindow.unmaximize();
+        }
+        else {
+            mainWindow.maximize();
+        }
+    }
+}
 function registerHotkeys() {
     const ret1 = electron_1.globalShortcut.register('CommandOrControl+Alt+R', () => {
         console.log('Hotkey CTRL+ALT+R pressed - Toggle Recording');
@@ -110,14 +130,19 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         frame: false,
+        transparent: true,
+        resizable: true,
         autoHideMenuBar: true,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: '#00000000',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
         },
     });
+    electron_1.ipcMain.on('window-minimize', minimizeApp);
+    electron_1.ipcMain.on('window-maximize', maximizeApp);
+    electron_1.ipcMain.on('window-close', closeApp);
     const htmlPath = getHTMLPath();
     console.log('Loading HTML from:', htmlPath);
     const isDev = !electron_1.app.isPackaged || process.env.NODE_ENV === 'development';

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "meeting_a05f28ba",
+    "name": "Reuni\u00e3o 26 Apr, 18:18",
+    "date": "26 Apr, 18:18",
+    "duration": "0:06",
+    "status": "pending",
+    "segments": 3,
+    "wav_file": "2026-04-26_175332_mic.wav, 2026-04-26_175332_system.wav, 2026-04-26_175332_mixed.wav, 2026-04-26_181406_mic.wav, 2026-04-26_181406_system.wav, 2026-04-26_181406_mixed.wav, 2026-04-26_181807_mic.wav, 2026-04-26_181807_system.wav, 2026-04-26_181807_mixed.wav"
+  },
+  {
+    "id": "meeting_ce9dcdee",
+    "name": "Reuni\u00e3o 26 Apr, 18:14",
+    "date": "26 Apr, 18:14",
+    "duration": "0:09",
+    "status": "pending",
+    "segments": 2,
+    "wav_file": "2026-04-26_175332_mic.wav, 2026-04-26_175332_system.wav, 2026-04-26_175332_mixed.wav, 2026-04-26_181406_mic.wav, 2026-04-26_181406_system.wav, 2026-04-26_181406_mixed.wav"
+  },
+  {
+    "id": "meeting_cbb0d7ae",
+    "name": "Reuni\u00e3o 26 Apr, 17:53",
+    "date": "26 Apr, 17:53",
+    "duration": "0:08",
+    "status": "pending",
+    "segments": 1,
+    "wav_file": "2026-04-26_175332_mic.wav, 2026-04-26_175332_system.wav, 2026-04-26_175332_mixed.wav"
+  }
+]

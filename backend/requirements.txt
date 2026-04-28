@@ -5,3 +5,8 @@ numpy
 soundfile
 pydantic
 faster-whisper
+torch
+psutil
+pytest
+pytest-asyncio
+httpx
