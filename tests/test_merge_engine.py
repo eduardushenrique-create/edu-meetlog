@@ -69,6 +69,25 @@ class TestTranscriptMergeEngine:
         assert len(third.new_segments) == 1
         assert len(third.merged_segments) == 2
 
+    def test_incremental_merge_suppresses_shifted_text_duplicate(self):
+        engine = TranscriptMergeEngine(overlap_policy="keep_both")
+        stream_id = "meeting_stream_1"
+
+        first = engine.merge_incremental(
+            stream_id,
+            "mic",
+            [{"start": 13.56, "end": 18.0, "text": "Iniciando áudio do YouTube."}],
+        )
+        shifted_duplicate = engine.merge_incremental(
+            stream_id,
+            "mic",
+            [{"start": 30.0, "end": 34.0, "text": "Iniciando áudio do YouTube."}],
+        )
+
+        assert len(first.new_segments) == 1
+        assert shifted_duplicate.new_segments == []
+        assert len(shifted_duplicate.merged_segments) == 1
+
     def test_output_contains_standard_segment_fields(self):
         merged = merge_segments(
             [{"start": 0.0, "end": 0.8, "text": "A"}],

@@ -15,6 +15,7 @@ body,
 #root {
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .app-stage {
@@ -25,11 +26,14 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
 }
 
 .dark-window {
-  width: 860px;
-  height: 560px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   border-radius: 12px;
   overflow: hidden;
   background: #080808;
@@ -38,6 +42,7 @@ body,
   flex-direction: column;
   position: relative;
   border: 1px solid #2a2a2a;
+  box-sizing: border-box;
 }
 
 .dark-window-titlebar {
@@ -48,6 +53,7 @@ body,
   display: flex;
   align-items: center;
   padding: 0 14px;
+  -webkit-app-region: drag;
 }
 
 .toast-popup {
@@ -132,35 +138,38 @@ body,
   }
 }
 
-.traffic-lights {
+.window-controls {
   display: flex;
-  gap: 7px;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.window-control {
+  width: 46px;
+  height: 100%;
+  display: flex;
   align-items: center;
-  position: absolute;
-  right: 14px;
-}
-
-.traffic-light {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  opacity: 0.85;
-  border: none;
+  justify-content: center;
+  color: #a0a0a0;
   cursor: pointer;
-  transition: opacity 0.15s, transform 0.15s;
+  transition: background 0.2s, color 0.2s;
 }
 
-.traffic-light:hover {
-  opacity: 1;
-  transform: scale(1.1);
+.window-control:hover {
+  background: #2a2a2a;
+  color: #fff;
 }
 
-.traffic-light:active {
-  transform: scale(0.95);
+.window-control.close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 .dark-window-title {
-  display: none;
+  display: flex !important;
+  align-items: center;
+  font-size: 12px;
+  color: #888;
 }
 
 .dark-window-content {

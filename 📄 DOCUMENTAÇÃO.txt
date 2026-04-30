@@ -150,3 +150,8 @@ ________________________________________
 •	Transcrição offline 
 •	UI responsiva
 
+
+________________________________________
+13. DIRETRIZES DE DESIGN
+• ATENÇÃO ESTRITA: O layout de controles de janela DEVE SEMPRE usar o padrão do Windows (minimizar, maximizar, fechar no canto superior direito com ícones clássicos SVG).
+• NUNCA utilize o padrão de botões coloridos estilo macOS (traffic-lights vermelhos/amarelos/verdes).

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
+let popupWindow: BrowserWindow | null = null;
 let pythonProcess: ChildProcess | null = null;
 let isRecording = false;
 
@@ -11,6 +12,13 @@ function getBackendPath(): string {
     return path.join(process.resourcesPath, 'backend', 'main.py');
   }
   return path.join(__dirname, '..', 'backend', 'main.py');
+}
+
+function getPythonCommand(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'backend', 'venv', 'Scripts', 'python.exe');
+  }
+  return 'python';
 }
 
 function getHTMLPath(): string {
@@ -22,11 +30,17 @@ function getHTMLPath(): string {
 
 function startBackend() {
   const backendPath = getBackendPath();
+  const pythonCommand = getPythonCommand();
   console.log('Starting backend from:', backendPath);
+  console.log('Using Python command:', pythonCommand);
   
-  pythonProcess = spawn('python', [backendPath], {
+  pythonProcess = spawn(pythonCommand, [backendPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: app.isPackaged ? path.dirname(backendPath) : undefined,
+  });
+
+  pythonProcess.on('error', (error: Error) => {
+    console.error('Backend spawn failed:', error);
   });
 
   pythonProcess.stdout?.on('data', (data: Buffer) => {
@@ -104,13 +118,14 @@ function registerHotkeys() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 940,
-    height: 620,
+    width: 860,
+    height: 560,
     minWidth: 800,
-    minHeight: 600,
+    minHeight: 520,
     frame: false,
     transparent: true,
     resizable: true,
+    thickFrame: true,
     autoHideMenuBar: true,
     backgroundColor: '#00000000',
     webPreferences: {
@@ -120,9 +135,19 @@ function createWindow() {
     },
   });
 
+  mainWindow.setResizable(true);
+  mainWindow.setMinimumSize(800, 520);
+
   ipcMain.on('window-minimize', minimizeApp);
   ipcMain.on('window-maximize', maximizeApp);
   ipcMain.on('window-close', closeApp);
+  ipcMain.handle('select-output-folder', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory']
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
 
   const htmlPath = getHTMLPath();
   console.log('Loading HTML from:', htmlPath);
@@ -144,6 +169,58 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+function createPopupWindow(title: string, message: string, action: string = 'start') {
+  if (popupWindow) {
+    popupWindow.close();
+  }
+
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width } = primaryDisplay.workAreaSize;
+
+  popupWindow = new BrowserWindow({
+    width: 320,
+    height: 120,
+    x: width - 340,
+    y: 20,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    }
+  });
+
+  const htmlPath = getHTMLPath();
+  const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
+  const queryUrl = `?popup=true&title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}&action=${encodeURIComponent(action)}`;
+
+  if (isDev) {
+    popupWindow.loadURL(`http://localhost:5174${queryUrl}`);
+  } else {
+    popupWindow.loadFile(htmlPath, { search: queryUrl });
+  }
+
+  setTimeout(() => {
+    if (popupWindow) popupWindow.close();
+  }, 30000);
+}
+
+ipcMain.on('show-overlay-popup', (_event, { title, message, action }) => {
+  createPopupWindow(title, message, action);
+});
+
+ipcMain.on('close-overlay-popup', () => {
+  if (popupWindow) {
+    popupWindow.close();
+    popupWindow = null;
+  }
+});
 
 app.whenReady().then(() => {
   startBackend();

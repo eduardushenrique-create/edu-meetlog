@@ -48,6 +48,15 @@ class TestChunking:
         
         assert buffer.current_chunk is not None or len(buffer.buffer) <= 10
 
+    def test_chunks_keep_capture_start_time(self, buffer):
+        chunk = np.random.randn(SAMPLE_RATE * 3)
+        buffer.add(chunk, chunk_start_time=123.5)
+
+        chunks = buffer.get_chunks()
+
+        assert chunks[0][0] == 123.5
+        assert len(chunks[0][1]) == SAMPLE_RATE * 3
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

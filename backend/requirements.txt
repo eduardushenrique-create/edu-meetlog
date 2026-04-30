@@ -7,6 +7,9 @@ pydantic
 faster-whisper
 torch
 psutil
+webrtcvad-wheels
+soundcard
 pytest
 pytest-asyncio
-httpx
+httpx
+transformers

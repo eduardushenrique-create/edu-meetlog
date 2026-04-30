@@ -11,35 +11,45 @@ SAMPLE_RATE = 16000
 CHANNELS = 1
 SEGMENT_DURATION = 300
 CHUNK_DURATION = 3
-RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
+from paths import RECORDINGS_DIR
 
 class ChunkBuffer:
-    def __init__(self, max_duration=3):
-        self.buffer = deque()
+    def __init__(self, max_duration=3, max_chunks=20):
+        # max_chunks=20 with max_duration=3 means we keep up to 60 seconds 
+        # of audio in the backlog before dropping oldest chunks (backpressure).
+        self.buffer = deque(maxlen=max_chunks)
         self.max_samples = SAMPLE_RATE * max_duration
         self.lock = Lock()
         self.current_chunk = np.array([])
+        self.current_start_time = None
     
-    def add(self, audio_data):
+    def add(self, audio_data, chunk_start_time=None):
         with self.lock:
+            if self.current_start_time is None:
+                self.current_start_time = chunk_start_time
             self.current_chunk = np.concatenate([self.current_chunk, audio_data])
-            while len(self.current_chunk) > self.max_samples:
-                self.buffer.append(self.current_chunk[:self.max_samples])
+            while len(self.current_chunk) >= self.max_samples:
+                # deque(maxlen=...) automatically drops oldest item if full
+                self.buffer.append((self.current_start_time, self.current_chunk[:self.max_samples]))
                 self.current_chunk = self.current_chunk[self.max_samples:]
+                if self.current_start_time is not None:
+                    self.current_start_time += self.max_samples / SAMPLE_RATE
     
     def get_chunks(self):
         with self.lock:
             chunks = list(self.buffer)
             self.buffer.clear()
             if len(self.current_chunk) >= SAMPLE_RATE:
-                chunks.append(self.current_chunk)
+                chunks.append((self.current_start_time, self.current_chunk))
                 self.current_chunk = np.array([])
+                self.current_start_time = None
             return chunks
     
     def clear(self):
         with self.lock:
             self.buffer.clear()
             self.current_chunk = np.array([])
+            self.current_start_time = None
 
 class AudioCapture:
     def __init__(self, mic_enabled=True, system_enabled=False):
@@ -118,7 +128,8 @@ class AudioCapture:
                         buffer.append((current_time, data))
                         
                         chunk_buffer = self.mic_chunk_buffer if name == "mic" else self.system_chunk_buffer
-                        chunk_buffer.add(data.flatten())
+                        chunk_start_time = current_time - (len(data) / SAMPLE_RATE)
+                        chunk_buffer.add(data.flatten(), chunk_start_time=chunk_start_time)
         except Exception as e:
             print(f"Erro capturando áudio de {name} ({mic.name}): {e}")
 
@@ -138,64 +149,52 @@ class AudioCapture:
         sys_data = self.system_buffer[:]
         self.system_buffer.clear()
         
+        if not mic_data and not sys_data:
+            return
+
+        # ------------------------------------------------------------------ #
+        # Resolve o intervalo de tempo global para alinhar ambas as fontes   #
+        # ------------------------------------------------------------------ #
         all_chunks = []
         if mic_data:
             all_chunks.extend(mic_data)
         if sys_data:
             all_chunks.extend(sys_data)
-            
-        if not all_chunks:
-            return
-            
-        # Calcula o inicio e o fim global (tempo real) para manter o sincronismo
-        first_time = min(t - len(d)/SAMPLE_RATE for t, d in all_chunks)
-        last_time = max(t for t, d in all_chunks)
-        
-        total_duration = last_time - first_time
-        total_samples = int(np.ceil(total_duration * SAMPLE_RATE))
-        
-        # Cria arrays baseados no tempo total e preenche os chunks nos locais exatos
-        mic_audio = np.zeros((total_samples, CHANNELS), dtype=np.float32)
-        sys_audio = np.zeros((total_samples, CHANNELS), dtype=np.float32)
-        
-        for t, d in mic_data:
-            duration = len(d) / SAMPLE_RATE
-            start_t = t - duration
-            offset = int((start_t - first_time) * SAMPLE_RATE)
-            end_offset = offset + len(d)
-            if offset >= 0 and end_offset <= total_samples:
-                mic_audio[offset:end_offset] += d
-                
-        for t, d in sys_data:
-            duration = len(d) / SAMPLE_RATE
-            start_t = t - duration
-            offset = int((start_t - first_time) * SAMPLE_RATE)
-            end_offset = offset + len(d)
-            if offset >= 0 and end_offset <= total_samples:
-                sys_audio[offset:end_offset] += d
 
-        audio_to_save = None
+        first_time = min(t - len(d) / SAMPLE_RATE for t, d in all_chunks)
+        last_time  = max(t for t, d in all_chunks)
+        total_duration = last_time - first_time
+        total_samples  = max(1, int(np.ceil(total_duration * SAMPLE_RATE)))
+
+        def _build_array(chunks):
+            arr = np.zeros((total_samples, CHANNELS), dtype=np.float32)
+            for t, d in chunks:
+                duration  = len(d) / SAMPLE_RATE
+                start_t   = t - duration
+                offset    = int((start_t - first_time) * SAMPLE_RATE)
+                end_offset = offset + len(d)
+                if offset >= 0 and end_offset <= total_samples:
+                    arr[offset:end_offset] += d
+            return arr
+
+        def _write_wav(path, audio):
+            with sf.SoundFile(str(path), mode='w', samplerate=SAMPLE_RATE,
+                              channels=CHANNELS, subtype='PCM_16') as f:
+                f.write(np.clip(audio, -1.0, 1.0))
+            print(f"[capture] Salvo: {path.name}")
+
         if mic_data and sys_data:
-            filename = RECORDINGS_DIR / f"{timestamp}_mixed.wav"
-            mixed_audio = np.zeros((total_samples, CHANNELS), dtype=np.float32)
-            # Dá um leve ganho no microfone para evitar que seja ofuscado pelo sistema
-            mixed_audio += mic_audio * 1.5
-            mixed_audio += sys_audio
-            
-            with sf.SoundFile(str(filename), mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS, subtype='PCM_16') as f:
-                f.write(np.clip(mixed_audio, -1.0, 1.0))
-            print(f"[capture] Salvo: {filename.name}")
-            return
+            # Salva cada fonte separadamente para o worker atribuir o speaker certo
+            mic_audio = _build_array(mic_data)
+            sys_audio = _build_array(sys_data)
+            _write_wav(RECORDINGS_DIR / f"{timestamp}_mic.wav",    mic_audio)
+            _write_wav(RECORDINGS_DIR / f"{timestamp}_system.wav", sys_audio)
         elif mic_data:
-            audio_to_save = mic_audio
+            mic_audio = _build_array(mic_data)
+            _write_wav(RECORDINGS_DIR / f"{timestamp}_mic.wav", mic_audio)
         elif sys_data:
-            audio_to_save = sys_audio
-            
-        if audio_to_save is not None:
-            filename = RECORDINGS_DIR / f"{timestamp}_mixed.wav"
-            with sf.SoundFile(str(filename), mode='w', samplerate=SAMPLE_RATE, channels=CHANNELS, subtype='PCM_16') as f:
-                f.write(np.clip(audio_to_save, -1.0, 1.0))
-            print(f"[capture] Salvo: {filename.name}")
+            sys_audio = _build_array(sys_data)
+            _write_wav(RECORDINGS_DIR / f"{timestamp}_system.wav", sys_audio)
 
     def stop(self):
         if not self.recording:

@@ -5,7 +5,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
-from diarization import SpeakerDiarizer, align_speakers_to_transcript
+from diarization import (
+    DiarizationEngine,
+    SpeakerDiarizer,
+    align_speakers_to_transcript,
+    align_transcript_with_diarization,
+)
 from vad import VAD
 
 class TestDiarization:
@@ -96,6 +101,26 @@ class TestAlignment:
         aligned = align_speakers_to_transcript(segments, {}, {})
         
         assert aligned == []
+
+    def test_temporal_overlap_alignment(self):
+        segments = [
+            {"id": 0, "start": 0, "end": 4, "speaker": "unknown", "text": "A"},
+            {"id": 1, "start": 4, "end": 8, "speaker": "unknown", "text": "B"},
+        ]
+        diarization = [
+            {"start": 0, "end": 3.5, "speaker": "SPEAKER_00"},
+            {"start": 4.5, "end": 8, "speaker": "SPEAKER_01"},
+        ]
+
+        aligned = align_transcript_with_diarization(segments, diarization)
+
+        assert aligned[0]["speaker"] == "SPEAKER_00"
+        assert aligned[1]["speaker"] == "SPEAKER_01"
+
+    def test_engine_can_disable_pyannote(self):
+        engine = DiarizationEngine(use_pyannote=False)
+
+        assert engine.pipeline is None
 
 
 if __name__ == "__main__":

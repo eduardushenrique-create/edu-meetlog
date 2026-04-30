@@ -27,4 +27,7 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     minimizeWindow: () => electron_1.ipcRenderer.send('window-minimize'),
     maximizeWindow: () => electron_1.ipcRenderer.send('window-maximize'),
     closeWindow: () => electron_1.ipcRenderer.send('window-close'),
+    showOverlayPopup: (data) => electron_1.ipcRenderer.send('show-overlay-popup', data),
+    closeOverlayPopup: () => electron_1.ipcRenderer.send('close-overlay-popup'),
+    selectOutputFolder: () => electron_1.ipcRenderer.invoke('select-output-folder'),
 });

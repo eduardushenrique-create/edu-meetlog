@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import type { ActionItem, Client, ClientIndicators, Person, Stakeholder } from './types';
 import './types';
 
-type Tab = 'dashboard' | 'meetings' | 'transcription' | 'settings';
+type Tab = 'dashboard' | 'meetings' | 'transcription' | 'clients' | 'people' | 'action-items' | 'settings' | 'calendar';
 
 const API_URL = 'http://127.0.0.1:8000';
 
@@ -22,19 +23,19 @@ function formatSec(s: number): string {
 function DarkWindow({ children }: { children: ReactNode }) {
   return (
     <div className="dark-window">
-      <div className="dark-window-titlebar">
-        <div className="traffic-lights">
-          {['#ef4444', '#f59e0b', '#22c55e'].map((color) => {
-            const isClose = color === '#ef4444';
-            const isMinimize = color === '#f59e0b';
-            const isMaximize = color === '#22c55e';
-            const action = isClose ? window.electronAPI?.closeWindow :
-                           isMinimize ? window.electronAPI?.minimizeWindow :
-                           isMaximize ? window.electronAPI?.maximizeWindow : undefined;
-            return <span key={color} className="traffic-light" style={{ background: color, cursor: 'pointer' }} onClick={action} />
-          })}
+      <div className="dark-window-titlebar" style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '0' }}>
+        <div className="dark-window-title" style={{ paddingLeft: '12px' }}>Edu MeetLog</div>
+        <div className="window-controls" style={{ display: 'flex', height: '100%' }}>
+          <div className="window-control minimize" onClick={window.electronAPI?.minimizeWindow} title="Minimizar">
+            <svg viewBox="0 0 10 1" width="10" height="1"><path d="M0,0 L10,0" stroke="currentColor" strokeWidth="1" shapeRendering="crispEdges"/></svg>
+          </div>
+          <div className="window-control maximize" onClick={window.electronAPI?.maximizeWindow} title="Maximizar">
+            <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0,0 L10,0 L10,10 L0,10 Z" fill="none" stroke="currentColor" strokeWidth="1" shapeRendering="crispEdges"/></svg>
+          </div>
+          <div className="window-control close" onClick={window.electronAPI?.closeWindow} title="Fechar">
+            <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0,0 L10,10 M10,0 L0,10" stroke="currentColor" strokeWidth="1" shapeRendering="crispEdges"/></svg>
+          </div>
         </div>
-        <div className="dark-window-title">Edu MeetLog</div>
       </div>
       <div className="dark-window-content">{children}</div>
     </div>
@@ -145,18 +146,22 @@ function SidebarItem({
 
 function Dashboard({
   isRecording,
+  isPaused,
   timer,
   status,
   onToggle,
+  onPauseResume,
   micEnabled,
   sysEnabled,
   realtimeSegments = [],
   wsConnected = false,
 }: {
   isRecording: boolean;
+  isPaused: boolean;
   timer: string;
   status: { pending: number; processing: number; done: number; failed: number };
   onToggle: () => void;
+  onPauseResume: () => void;
   micEnabled: boolean;
   sysEnabled: boolean;
   realtimeSegments?: Segment[];
@@ -259,6 +264,14 @@ function Dashboard({
             ⌃⌥R
           </kbd>
         </div>
+        {isRecording && (
+          <button
+            onClick={onPauseResume}
+            className="px-3 py-1.5 rounded-md text-xs border border-gray-800 bg-gray-950 text-gray-300 hover:border-gray-700 cursor-pointer"
+          >
+            {isPaused ? 'Continuar' : 'Pausar'}
+          </button>
+        )}
       </div>
 
       <div>
@@ -331,27 +344,110 @@ function Meetings({
   meetings,
   onOpen,
   onDelete,
+  onBulkDelete,
+  onBulkArchive,
+  labels,
+  selectedIds,
+  onToggleSelection,
+  onClearSelection
 }: {
   meetings: Meeting[];
   onOpen: (m: Meeting) => void;
   onDelete: (id: string) => void;
+  onBulkDelete?: (ids: string[]) => void;
+  onBulkArchive?: (ids: string[]) => void;
+  labels?: any[];
+  selectedIds?: string[];
+  onToggleSelection?: (id: string) => void;
+  onClearSelection?: () => void;
+  onSelectAll?: (ids: string[]) => void;
 }) {
+  const [showArchived, setShowArchived] = useState(false);
+  const [filterLabel, setFilterLabel] = useState<string>('');
+
+  const filteredMeetings = meetings.filter(m => {
+    if (showArchived && !m.archived) return false;
+    if (!showArchived && m.archived) return false;
+    if (filterLabel && !(m.labels || []).includes(filterLabel)) return false;
+    return true;
+  });
+
   return (
     <div className="h-full flex flex-col" style={{ padding: '28px 32px' }}>
       <div className="flex items-center justify-between mb-5">
         <div>
           <div className="text-xs tracking-widest text-gray-600 font-semibold">REUNIÕES</div>
-          <div className="text-lg font-semibold mt-0.5">{meetings.length} gravações</div>
+          <div className="text-lg font-semibold mt-0.5">{filteredMeetings.length} gravações</div>
         </div>
-        <button
-          className="bg-gray-900 border border-gray-800 text-gray-500 rounded-md px-3 py-1.5 text-xs cursor-pointer font-sans"
-          style={{ fontFamily: 'Inter, sans-serif' }}
-        >
-          Exportar todas
-        </button>
+        <div className="flex gap-2 items-center">
+          <select 
+            className="bg-transparent border border-gray-700 text-gray-400 rounded px-2 py-1 text-xs outline-none cursor-pointer"
+            value={showArchived ? 'archived' : 'active'}
+            onChange={(e) => setShowArchived(e.target.value === 'archived')}
+          >
+            <option value="active">Ativas</option>
+            <option value="archived">Arquivadas</option>
+          </select>
+          <select 
+            className="bg-transparent border border-gray-700 text-gray-400 rounded px-2 py-1 text-xs outline-none cursor-pointer"
+            value={filterLabel}
+            onChange={(e) => setFilterLabel(e.target.value)}
+          >
+            <option value="">Todas as Etiquetas</option>
+            {(labels || []).map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+          {selectedIds && selectedIds.length > 0 && (
+            <>
+              <button
+                className="bg-red-900/50 text-red-400 border border-red-800 rounded-md px-3 py-1.5 text-xs cursor-pointer hover:bg-red-800 transition-colors"
+                onClick={() => onBulkDelete?.(selectedIds)}
+              >
+                Excluir {selectedIds.length}
+              </button>
+              {!showArchived && (
+                <button
+                  className="bg-gray-800 text-gray-300 border border-gray-700 rounded-md px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-700 transition-colors"
+                  onClick={() => onBulkArchive?.(selectedIds)}
+                >
+                  Arquivar {selectedIds.length}
+                </button>
+              )}
+              <button
+                className="text-gray-500 hover:text-gray-300 text-xs cursor-pointer bg-transparent border-none"
+                onClick={() => onClearSelection?.()}
+              >
+                Cancelar
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto flex flex-col gap-1">
-        {meetings.map((m) => (
+        {filteredMeetings.length > 0 && (
+          <div className="flex items-center p-2 mb-2 bg-gray-900 border border-gray-800 rounded-md">
+            <input 
+              type="checkbox" 
+              checked={selectedIds?.length === filteredMeetings.length && filteredMeetings.length > 0} 
+              onChange={(e) => {
+                if (e.target.checked) {
+                  onSelectAll?.(filteredMeetings.map(m => m.id));
+                } else {
+                  onClearSelection?.();
+                }
+              }}
+              className="w-4 h-4 cursor-pointer accent-blue-600 mx-1"
+            />
+            <span className="text-xs text-gray-400 font-medium ml-2">Selecionar Tudo ({filteredMeetings.length})</span>
+          </div>
+        )}
+        {filteredMeetings.length === 0 && (
+          <div className="text-gray-500 text-sm text-center mt-10">
+            Nenhuma transcrição encontrada.
+          </div>
+        )}
+        {filteredMeetings.map((m) => (
           <div
             key={m.id}
             className="flex items-center p-3 rounded-md border border-gray-950 bg-gray-950 cursor-pointer transition-all gap-3"
@@ -365,6 +461,14 @@ function Meetings({
               target.style.borderColor = '#181818';
             }}
           >
+            <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+              <input 
+                type="checkbox" 
+                checked={selectedIds?.includes(m.id) || false} 
+                onChange={() => onToggleSelection?.(m.id)}
+                className="w-4 h-4 cursor-pointer accent-blue-600"
+              />
+            </div>
             <div className="flex-1 min-w-0" onClick={() => onOpen(m)}>
               <div
                 className="text-sm font-medium text-gray-200 mb-0.5 truncate"
@@ -379,6 +483,15 @@ function Meetings({
               <div className="flex gap-3 items-center">
                 <span className="text-xs text-gray-600">{m.date}</span>
                 <span className="text-xs text-gray-700 font-mono">{m.duration}</span>
+                {m.labels?.map(lblId => {
+                  const lbl = labels?.find(l => l.id === lblId);
+                  if (!lbl) return null;
+                  return (
+                    <span key={lblId} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: lbl.color + '20', color: lbl.color, border: `1px solid ${lbl.color}40` }}>
+                      {lbl.name}
+                    </span>
+                  );
+                })}
                 {m.status === 'processing' && (
                   <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded font-semibold">
                     PROCESSANDO
@@ -436,12 +549,119 @@ function Meetings({
 function Transcription({
   meeting,
   segments,
+  labels,
+  clients,
   onBack,
+  onLabelsUpdated,
+  onClassifyMeeting,
 }: {
   meeting: Meeting | null;
   segments: Segment[];
+  labels?: any[];
+  clients: Client[];
   onBack: () => void;
+  onLabelsUpdated?: () => void;
+  onClassifyMeeting?: (meetingId: string, payload: { client_id?: string | null; meeting_kind?: 'internal' | 'external' | '' }) => Promise<void>;
 }) {
+  const [suggestedLabels, setSuggestedLabels] = useState<any[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [meetingKind, setMeetingKind] = useState<'internal' | 'external' | ''>('');
+
+  useEffect(() => {
+    setClientId(meeting?.client_id || '');
+    setMeetingKind(meeting?.meeting_kind || '');
+  }, [meeting?.id, meeting?.client_id, meeting?.meeting_kind]);
+
+  useEffect(() => {
+    if (meeting?.suggested_labels && labels) {
+      const found = labels.filter(l => meeting.suggested_labels!.includes(l.id));
+      const newSuggestions = found.filter(l => !(meeting.labels || []).includes(l.id));
+      setSuggestedLabels(newSuggestions);
+    } else {
+      setSuggestedLabels([]);
+    }
+  }, [meeting?.id, meeting?.suggested_labels, meeting?.labels, labels]);
+
+  const handleSuggest = async () => {
+    if (!meeting) return;
+    setIsSuggesting(true);
+    try {
+      const res = await fetch(`${API_URL}/meetings/${meeting.id}/suggest-labels`, { method: 'POST' });
+      const data = await res.json();
+      if (data.suggested_label_ids) {
+        const found = (labels || []).filter(l => data.suggested_label_ids.includes(l.id));
+        const newSuggestions = found.filter(l => !(meeting.labels || []).includes(l.id));
+        setSuggestedLabels(newSuggestions);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  const handleAcceptSuggestion = async (labelId: string) => {
+    if (!meeting) return;
+    const current = meeting.labels || [];
+    const updated = [...current, labelId];
+    try {
+      await fetch(`${API_URL}/meetings/${meeting.id}/labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label_ids: updated })
+      });
+      setSuggestedLabels(prev => prev.filter(l => l.id !== labelId));
+      meeting.labels = updated; 
+      onLabelsUpdated?.();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectSuggestion = (labelId: string) => {
+    setSuggestedLabels(prev => prev.filter(l => l.id !== labelId));
+  };
+
+  const handleManualAddLabel = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const labelId = e.target.value;
+    if (!labelId || !meeting) return;
+    const current = meeting.labels || [];
+    if (current.includes(labelId)) {
+      e.target.value = "";
+      return;
+    }
+    const updated = [...current, labelId];
+    try {
+      await fetch(`${API_URL}/meetings/${meeting.id}/labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label_ids: updated })
+      });
+      meeting.labels = updated; 
+      onLabelsUpdated?.();
+      e.target.value = "";
+    } catch (err) {
+      console.error(err);
+    }
+  };
+  
+  const handleRemoveLabel = async (labelId: string) => {
+    if (!meeting) return;
+    const current = meeting.labels || [];
+    const updated = current.filter(id => id !== labelId);
+    try {
+      await fetch(`${API_URL}/meetings/${meeting.id}/labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label_ids: updated })
+      });
+      meeting.labels = updated; 
+      onLabelsUpdated?.();
+    } catch (err) {
+      console.error(err);
+    }
+  };
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -498,6 +718,13 @@ function Transcription({
           </div>
           <div className="flex gap-1.5">
             <button
+              onClick={handleSuggest}
+              disabled={isSuggesting}
+              className="px-3 py-1.5 text-xs rounded-md cursor-pointer font-sans transition-all border bg-purple-900/30 border-purple-800 text-purple-300 hover:bg-purple-800/50 flex items-center gap-1.5"
+            >
+              {isSuggesting ? '⏳ Pensando...' : '🪄 Sugerir Rótulos'}
+            </button>
+            <button
               onClick={handleCopy}
               className="px-3 py-1.5 text-xs rounded-md cursor-pointer font-sans transition-all border"
               style={{
@@ -511,6 +738,78 @@ function Transcription({
           </div>
         </div>
       </div>
+
+      <div className="flex gap-2 mb-3 items-center flex-wrap">
+        {meeting?.labels?.map(lblId => {
+          const lbl = labels?.find(l => l.id === lblId);
+          if (!lbl) return null;
+          return (
+            <span key={lblId} className="flex items-center text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: lbl.color + '20', color: lbl.color, border: `1px solid ${lbl.color}40` }}>
+              {lbl.name}
+              <button onClick={() => handleRemoveLabel(lblId)} className="ml-1 text-current opacity-60 hover:opacity-100 bg-transparent border-none cursor-pointer p-0 font-bold">&times;</button>
+            </span>
+          );
+        })}
+        <select
+          onChange={handleManualAddLabel}
+          defaultValue=""
+          className="bg-transparent border border-gray-700 text-gray-400 rounded px-1 py-0.5 text-[10px] outline-none cursor-pointer hover:border-gray-500 transition-colors"
+        >
+          <option value="" disabled>+ Adicionar Rótulo</option>
+          {(labels || []).filter(l => !(meeting?.labels || []).includes(l.id)).map(l => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mb-4 grid gap-3" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 220px) auto' }}>
+        <select
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          className="bg-gray-950 border border-gray-800 text-gray-200 rounded-md px-3 py-2 text-sm outline-none"
+        >
+          <option value="">Associar cliente</option>
+          {clients.map((client) => (
+            <option key={client.id} value={client.id}>{client.name}</option>
+          ))}
+        </select>
+        <select
+          value={meetingKind}
+          onChange={(e) => setMeetingKind(e.target.value as 'internal' | 'external' | '')}
+          className="bg-gray-950 border border-gray-800 text-gray-200 rounded-md px-3 py-2 text-sm outline-none"
+        >
+          <option value="">Tipo da reunião</option>
+          <option value="external">Externa com cliente</option>
+          <option value="internal">Interna sobre cliente</option>
+        </select>
+        <button
+          onClick={async () => {
+            if (!meeting || !onClassifyMeeting) return;
+            await onClassifyMeeting(meeting.id, { client_id: clientId || null, meeting_kind: meetingKind });
+          }}
+          className="bg-blue-600 hover:bg-blue-700 text-white rounded-md px-3 py-2 text-sm font-medium border-none cursor-pointer"
+        >
+          Salvar vínculo
+        </button>
+      </div>
+
+      {suggestedLabels.length > 0 && (
+        <div className="mb-4 p-3 bg-purple-900/10 border border-purple-900/50 rounded-md">
+          <div className="text-xs font-semibold text-purple-300 mb-2">Sugestões da IA:</div>
+          <div className="flex flex-wrap gap-2">
+            {suggestedLabels.map(l => (
+              <div key={l.id} className="flex items-center gap-2 px-2 py-1 rounded text-xs font-medium bg-gray-900 border border-gray-800 text-gray-200">
+                <span className="w-2 h-2 rounded-full" style={{ background: l.color }} />
+                {l.name}
+                <div className="flex items-center ml-3 gap-3 border-l border-gray-700 pl-3">
+                  <button onClick={() => handleAcceptSuggestion(l.id)} className="flex items-center gap-1 bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 rounded px-2 py-0.5 cursor-pointer font-bold text-[10px]" title="Aceitar">✓ Aceitar</button>
+                  <button onClick={() => handleRejectSuggestion(l.id)} className="flex items-center gap-1 bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 rounded px-2 py-0.5 cursor-pointer font-bold text-[10px]" title="Recusar">✕ Recusar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 mb-3">
         {['user', 'system'].map((speaker) => (
@@ -563,6 +862,7 @@ interface SettingsState {
   model: string;
   workers: number;
   auto_start: boolean;
+  output_folder?: string;
 }
 
 function SettingsPanel({
@@ -570,12 +870,20 @@ function SettingsPanel({
   onChange,
   onSave,
   saved,
+  labels = [],
+  onAddLabel,
+  onRemoveLabel
 }: {
   settings: SettingsState;
   onChange: (s: SettingsState) => void;
   onSave: () => void;
   saved: boolean;
+  labels?: any[];
+  onAddLabel?: (name: string, color: string) => void;
+  onRemoveLabel?: (id: string) => void;
 }) {
+  const [newLabelName, setNewLabelName] = useState('');
+  const [newLabelColor, setNewLabelColor] = useState('#3b82f6');
   return (
     <div className="h-full overflow-y-auto" style={{ padding: '28px 32px' }}>
       <div className="mb-6">
@@ -674,6 +982,51 @@ function SettingsPanel({
 
       <div className="mb-7">
         <div className="text-xs tracking-widest text-gray-700 font-semibold mb-2.5 pb-1.5 border-b border-gray-950">
+          ETIQUETAS (LABELS)
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2 mb-2">
+            <input 
+              type="text" 
+              placeholder="Nome da etiqueta" 
+              value={newLabelName}
+              onChange={(e) => setNewLabelName(e.target.value)}
+              className="flex-1 bg-gray-900 border border-gray-800 text-gray-200 rounded px-3 py-1.5 text-sm"
+            />
+            <input 
+              type="color" 
+              value={newLabelColor}
+              onChange={(e) => setNewLabelColor(e.target.value)}
+              className="w-8 h-8 rounded border border-gray-800 cursor-pointer p-0 bg-gray-900"
+            />
+            <button 
+              onClick={() => {
+                if (newLabelName && onAddLabel) {
+                  onAddLabel(newLabelName, newLabelColor);
+                  setNewLabelName('');
+                }
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1.5 text-sm font-medium border-none cursor-pointer"
+            >
+              Adicionar
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {labels.map(l => (
+              <div key={l.id} className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium" style={{ background: l.color + '20', color: l.color, border: `1px solid ${l.color}40` }}>
+                {l.name}
+                <button onClick={() => onRemoveLabel?.(l.id)} className="bg-transparent border-none text-current opacity-70 hover:opacity-100 cursor-pointer p-0 ml-1">
+                  &times;
+                </button>
+              </div>
+            ))}
+            {labels.length === 0 && <span className="text-xs text-gray-600">Nenhuma etiqueta criada.</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-7">
+        <div className="text-xs tracking-widest text-gray-700 font-semibold mb-2.5 pb-1.5 border-b border-gray-950">
           ATALHOS
         </div>
         <div className="flex flex-col gap-1.5">
@@ -713,6 +1066,412 @@ function SettingsPanel({
   );
 }
 
+function SectionHeader({
+  eyebrow,
+  title,
+  subtitle,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex items-end justify-between mb-5 gap-4">
+      <div>
+        <div className="text-xs tracking-widest text-gray-600 font-semibold">{eyebrow}</div>
+        <div className="text-lg font-semibold mt-0.5">{title}</div>
+        {subtitle && <div className="text-xs text-gray-500 mt-1">{subtitle}</div>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function ClientsPanel({
+  clients,
+  stakeholders,
+  indicatorsByClient,
+  onCreateClient,
+}: {
+  clients: Client[];
+  stakeholders: Stakeholder[];
+  indicatorsByClient: Record<string, ClientIndicators>;
+  onCreateClient: (payload: { name: string; aliases: string[]; description: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [aliases, setAliases] = useState('');
+  const [description, setDescription] = useState('');
+
+  return (
+    <div className="h-full overflow-y-auto" style={{ padding: '28px 32px' }}>
+      <SectionHeader
+        eyebrow="FASE 4"
+        title="Clientes"
+        subtitle="Workspace local por cliente com stakeholders, volume de reunião e pendências."
+      />
+
+      <div className="grid gap-6" style={{ gridTemplateColumns: 'minmax(0, 320px) minmax(0, 1fr)' }}>
+        <div className="bg-gray-950 border border-gray-900 rounded-xl p-4 h-fit">
+          <div className="text-xs tracking-widest text-gray-600 font-semibold mb-3">NOVO CLIENTE</div>
+          <div className="flex flex-col gap-3">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nome do cliente"
+              className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm"
+            />
+            <input
+              value={aliases}
+              onChange={(e) => setAliases(e.target.value)}
+              placeholder="Aliases separados por vírgula"
+              className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm"
+            />
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Contexto, projeto, conta ou observações"
+              rows={4}
+              className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm resize-none"
+            />
+            <button
+              onClick={async () => {
+                if (!name.trim()) return;
+                await onCreateClient({
+                  name: name.trim(),
+                  aliases: aliases.split(',').map((item) => item.trim()).filter(Boolean),
+                  description: description.trim(),
+                });
+                setName('');
+                setAliases('');
+                setDescription('');
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-md px-3 py-2 text-sm font-medium border-none cursor-pointer"
+            >
+              Criar cliente
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {clients.length === 0 && (
+            <div className="text-sm text-gray-500">Nenhum cliente cadastrado ainda.</div>
+          )}
+          {clients.map((client) => {
+            const clientStakeholders = stakeholders.filter((item) => item.client_id === client.id);
+            const indicators = indicatorsByClient[client.id];
+            return (
+              <div key={client.id} className="bg-gray-950 border border-gray-900 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <div>
+                    <div className="text-base font-semibold text-gray-100">{client.name}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {client.aliases.length > 0 ? client.aliases.join(' • ') : 'Sem aliases cadastrados'}
+                    </div>
+                    {client.description && <div className="text-sm text-gray-400 mt-2">{client.description}</div>}
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-semibold border ${client.active ? 'text-green-400 border-green-500/30 bg-green-500/10' : 'text-gray-500 border-gray-700 bg-gray-900'}`}>
+                    {client.active ? 'ATIVO' : 'INATIVO'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 xl:grid-cols-5 gap-2 mb-4">
+                  {[
+                    { label: 'Semana', value: `${indicators?.weekly_minutes ?? 0} min` },
+                    { label: 'Mês', value: `${indicators?.monthly_minutes ?? 0} min` },
+                    { label: 'Externo', value: `${indicators?.weekly_external_minutes ?? 0} min` },
+                    { label: 'Interno', value: `${indicators?.weekly_internal_minutes ?? 0} min` },
+                    { label: 'Pendências', value: String(indicators?.open_action_items ?? 0) },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-black/30 border border-gray-900 rounded-lg px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-widest text-gray-600">{item.label}</div>
+                      <div className="text-sm font-semibold text-gray-200 mt-1">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <div className="text-xs tracking-widest text-gray-600 font-semibold mb-2">STAKEHOLDERS</div>
+                  <div className="flex flex-wrap gap-2">
+                    {clientStakeholders.length > 0 ? clientStakeholders.map((item) => (
+                      <span key={item.id} className="px-2 py-1 rounded-full text-xs text-blue-300 border border-blue-500/20 bg-blue-500/10">
+                        {item.role} · {item.influence_level}
+                      </span>
+                    )) : <span className="text-xs text-gray-600">Nenhum stakeholder vinculado ainda.</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PeoplePanel({
+  people,
+  clients,
+  stakeholders,
+  onCreatePerson,
+  onCreateStakeholder,
+}: {
+  people: Person[];
+  clients: Client[];
+  stakeholders: Stakeholder[];
+  onCreatePerson: (payload: { name: string; email: string; client_ids: string[]; is_temporary: boolean }) => Promise<void>;
+  onCreateStakeholder: (payload: { client_id: string; person_id: string; role: string; influence_level: string; is_primary: boolean }) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [temporary, setTemporary] = useState(false);
+  const [stakeholderClientId, setStakeholderClientId] = useState('');
+  const [stakeholderPersonId, setStakeholderPersonId] = useState('');
+  const [role, setRole] = useState('Ponto focal');
+  const [influence, setInfluence] = useState('medium');
+  const [isPrimary, setIsPrimary] = useState(false);
+
+  return (
+    <div className="h-full overflow-y-auto" style={{ padding: '28px 32px' }}>
+      <SectionHeader
+        eyebrow="FASE 4"
+        title="Pessoas e Stakeholders"
+        subtitle="Memória local de participantes, contatos recorrentes e relações por cliente."
+      />
+
+      <div className="grid gap-6" style={{ gridTemplateColumns: 'minmax(0, 340px) minmax(0, 1fr)' }}>
+        <div className="flex flex-col gap-4">
+          <div className="bg-gray-950 border border-gray-900 rounded-xl p-4">
+            <div className="text-xs tracking-widest text-gray-600 font-semibold mb-3">NOVA PESSOA</div>
+            <div className="flex flex-col gap-3">
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome" className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm" />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm" />
+              <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+                <option value="">Sem cliente principal</option>
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-sm text-gray-400">
+                <input type="checkbox" checked={temporary} onChange={(e) => setTemporary(e.target.checked)} className="accent-blue-600" />
+                Pessoa temporária / ainda não confirmada
+              </label>
+              <button
+                onClick={async () => {
+                  if (!name.trim()) return;
+                  await onCreatePerson({
+                    name: name.trim(),
+                    email: email.trim(),
+                    client_ids: clientId ? [clientId] : [],
+                    is_temporary: temporary,
+                  });
+                  setName('');
+                  setEmail('');
+                  setClientId('');
+                  setTemporary(false);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-md px-3 py-2 text-sm font-medium border-none cursor-pointer"
+              >
+                Criar pessoa
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-900 rounded-xl p-4">
+            <div className="text-xs tracking-widest text-gray-600 font-semibold mb-3">VINCULAR STAKEHOLDER</div>
+            <div className="flex flex-col gap-3">
+              <select value={stakeholderClientId} onChange={(e) => setStakeholderClientId(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+                <option value="">Cliente</option>
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select>
+              <select value={stakeholderPersonId} onChange={(e) => setStakeholderPersonId(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+                <option value="">Pessoa</option>
+                {people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+              </select>
+              <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Papel" className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm" />
+              <select value={influence} onChange={(e) => setInfluence(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+                <option value="low">Influência baixa</option>
+                <option value="medium">Influência média</option>
+                <option value="high">Influência alta</option>
+                <option value="decision_maker">Decisor</option>
+              </select>
+              <label className="flex items-center gap-2 text-sm text-gray-400">
+                <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} className="accent-blue-600" />
+                Stakeholder principal
+              </label>
+              <button
+                onClick={async () => {
+                  if (!stakeholderClientId || !stakeholderPersonId || !role.trim()) return;
+                  await onCreateStakeholder({
+                    client_id: stakeholderClientId,
+                    person_id: stakeholderPersonId,
+                    role: role.trim(),
+                    influence_level: influence,
+                    is_primary: isPrimary,
+                  });
+                  setStakeholderClientId('');
+                  setStakeholderPersonId('');
+                  setRole('Ponto focal');
+                  setInfluence('medium');
+                  setIsPrimary(false);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-md px-3 py-2 text-sm font-medium border-none cursor-pointer"
+              >
+                Vincular stakeholder
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {people.length === 0 && <div className="text-sm text-gray-500">Nenhuma pessoa registrada.</div>}
+          {people.map((person) => {
+            const personClients = clients.filter((client) => person.client_ids.includes(client.id));
+            const personStakeholders = stakeholders.filter((item) => item.person_id === person.id);
+            return (
+              <div key={person.id} className="bg-gray-950 border border-gray-900 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-base font-semibold text-gray-100">{person.name}</div>
+                    <div className="text-xs text-gray-500 mt-1">{person.email || 'Sem e-mail cadastrado'}</div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-semibold border ${person.is_temporary ? 'text-amber-300 border-amber-500/30 bg-amber-500/10' : 'text-green-400 border-green-500/30 bg-green-500/10'}`}>
+                    {person.is_temporary ? 'TEMPORÁRIA' : 'CONFIRMADA'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {personClients.map((client) => (
+                    <span key={client.id} className="px-2 py-1 rounded-full text-xs text-gray-300 border border-gray-800 bg-black/20">
+                      {client.name}
+                    </span>
+                  ))}
+                  {personClients.length === 0 && <span className="text-xs text-gray-600">Sem cliente associado.</span>}
+                </div>
+                <div className="mt-3 text-xs text-gray-400">
+                  {personStakeholders.length > 0 ? personStakeholders.map((item) => item.role).join(' • ') : 'Ainda sem papel de stakeholder.'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionItemsPanel({
+  actionItems,
+  clients,
+  people,
+  meetings,
+  onCreateActionItem,
+}: {
+  actionItems: ActionItem[];
+  clients: Client[];
+  people: Person[];
+  meetings: Meeting[];
+  onCreateActionItem: (payload: { title: string; client_id?: string; meeting_id?: string; assignee_person_id?: string; priority: string }) => Promise<void>;
+}) {
+  const [title, setTitle] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [meetingId, setMeetingId] = useState('');
+  const [personId, setPersonId] = useState('');
+  const [priority, setPriority] = useState('medium');
+
+  const openItems = actionItems.filter((item) => item.status !== 'done' && item.status !== 'cancelled');
+
+  return (
+    <div className="h-full overflow-y-auto" style={{ padding: '28px 32px' }}>
+      <SectionHeader
+        eyebrow="FASE 4"
+        title="Pendências"
+        subtitle="Central local de follow-ups, responsáveis e itens em aberto por cliente."
+        action={<div className="text-xs text-gray-500">{openItems.length} em aberto</div>}
+      />
+
+      <div className="grid gap-6" style={{ gridTemplateColumns: 'minmax(0, 340px) minmax(0, 1fr)' }}>
+        <div className="bg-gray-950 border border-gray-900 rounded-xl p-4 h-fit">
+          <div className="text-xs tracking-widest text-gray-600 font-semibold mb-3">NOVA PENDÊNCIA</div>
+          <div className="flex flex-col gap-3">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Descrição objetiva" className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm" />
+            <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+              <option value="">Cliente opcional</option>
+              {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </select>
+            <select value={meetingId} onChange={(e) => setMeetingId(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+              <option value="">Reunião opcional</option>
+              {meetings.map((meeting) => <option key={meeting.id} value={meeting.id}>{meeting.name}</option>)}
+            </select>
+            <select value={personId} onChange={(e) => setPersonId(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+              <option value="">Responsável opcional</option>
+              {people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+            </select>
+            <select value={priority} onChange={(e) => setPriority(e.target.value)} className="bg-gray-900 border border-gray-800 text-gray-100 rounded-md px-3 py-2 text-sm">
+              <option value="low">Prioridade baixa</option>
+              <option value="medium">Prioridade média</option>
+              <option value="high">Prioridade alta</option>
+            </select>
+            <button
+              onClick={async () => {
+                if (!title.trim()) return;
+                await onCreateActionItem({
+                  title: title.trim(),
+                  client_id: clientId || undefined,
+                  meeting_id: meetingId || undefined,
+                  assignee_person_id: personId || undefined,
+                  priority,
+                });
+                setTitle('');
+                setClientId('');
+                setMeetingId('');
+                setPersonId('');
+                setPriority('medium');
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-md px-3 py-2 text-sm font-medium border-none cursor-pointer"
+            >
+              Criar pendência
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {actionItems.length === 0 && <div className="text-sm text-gray-500">Nenhuma pendência cadastrada.</div>}
+          {actionItems.map((item) => {
+            const client = clients.find((entry) => entry.id === item.client_id);
+            const person = people.find((entry) => entry.id === item.assignee_person_id);
+            const meeting = meetings.find((entry) => entry.id === item.meeting_id);
+            return (
+              <div key={item.id} className="bg-gray-950 border border-gray-900 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-base font-semibold text-gray-100">{item.title}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {client?.name || 'Sem cliente'} · {person?.name || 'Sem responsável'} · {meeting?.name || 'Sem reunião'}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className={`px-2 py-1 rounded-full text-[10px] font-semibold border ${item.priority === 'high' ? 'text-red-300 border-red-500/30 bg-red-500/10' : item.priority === 'medium' ? 'text-amber-300 border-amber-500/30 bg-amber-500/10' : 'text-blue-300 border-blue-500/30 bg-blue-500/10'}`}>
+                      {item.priority.toUpperCase()}
+                    </span>
+                    <span className="px-2 py-1 rounded-full text-[10px] font-semibold border text-gray-300 border-gray-700 bg-black/30">
+                      {(item.status || 'open').toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+                {item.evidence?.length > 0 && (
+                  <div className="mt-3 text-sm text-gray-400 border-l-2 border-blue-500/30 pl-3">
+                    {item.evidence[0].excerpt}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [isRecording, setIsRecording] = useState(false);
@@ -720,17 +1479,32 @@ export default function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [meetingSegments, setMeetingSegments] = useState<Segment[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [stakeholders, setStakeholders] = useState<Stakeholder[]>([]);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [indicatorsByClient, setIndicatorsByClient] = useState<Record<string, ClientIndicators>>({});
   const [settings, setSettings] = useState<SettingsState>({
     mic_enabled: true,
     system_enabled: true,
     model: 'large-v3',
     workers: 2,
     auto_start: false,
+    output_folder: '',
   });
   const [saved, setSaved] = useState(false);
   const [status, setStatus] = useState({ pending: 0, processing: 0, done: 0, failed: 0 });
   const [realtimeSegments, setRealtimeSegments] = useState<Segment[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [labels, setLabels] = useState<any[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const isRecordingRef = useRef(false);
   const settingsRef = useRef(settings);
@@ -784,6 +1558,12 @@ export default function App() {
       const data = await res.json();
       console.log('Response data:', data);
       
+      if (data.success) {
+        showToast(current ? 'Gravação finalizada com sucesso!' : 'Gravação iniciada!', 'success');
+      } else {
+        showToast(data.message || 'Erro na operação', 'error');
+      }
+      
       fetchStatus();
       if (current) {
         fetchMeetings();
@@ -792,6 +1572,25 @@ export default function App() {
       }
     } catch (e) {
       console.error('Error in performToggle:', e);
+      showToast('Falha na comunicação com o servidor local', 'error');
+    }
+  };
+
+  const performPauseResume = async () => {
+    try {
+      const endpoint = isPaused ? 'resume' : 'pause';
+      const res = await fetch(`${API_URL}/recording/${endpoint}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(isPaused ? 'Gravação continuada' : 'Gravação pausada', 'success');
+        setIsPaused(!isPaused);
+      } else {
+        showToast(data.message || 'Erro ao alterar estado', 'error');
+      }
+      fetchStatus();
+    } catch (e) {
+      console.error('Error pausing/resuming:', e);
+      showToast('Erro ao pausar/continuar', 'error');
     }
   };
 
@@ -830,6 +1629,21 @@ export default function App() {
     if (tab === 'meetings') {
       fetchMeetings();
     }
+    if (tab === 'clients') {
+      fetchClients();
+      fetchStakeholders();
+    }
+    if (tab === 'people') {
+      fetchPeople();
+      fetchStakeholders();
+      fetchClients();
+    }
+    if (tab === 'action-items') {
+      fetchActionItems();
+      fetchClients();
+      fetchPeople();
+      fetchMeetings();
+    }
   }, [tab]);
 
   useEffect(() => {
@@ -840,9 +1654,15 @@ export default function App() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          const merged = data.final_transcript?.segments;
-          if (Array.isArray(merged)) {
-            setRealtimeSegments(merged);
+          if (data.type === 'popup') {
+            (window as any).electronAPI?.showOverlayPopup?.({ title: data.title, message: data.message, action: data.action });
+            return;
+          }
+          if (data.final_transcript) {
+            const merged = data.final_transcript?.segments;
+            if (Array.isArray(merged) && isRecordingRef.current) {
+              setRealtimeSegments(merged);
+            }
           }
         } catch (e) {}
       };
@@ -904,8 +1724,247 @@ export default function App() {
     setTab('transcription');
   };
 
+  const fetchLabels = async () => {
+    try {
+      const res = await fetch(`${API_URL}/labels`);
+      if (res.ok) setLabels(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchClients = async () => {
+    try {
+      const res = await fetch(`${API_URL}/clients`);
+      if (!res.ok) return;
+      const data: Client[] = await res.json();
+      setClients(data);
+
+      const indicatorEntries = await Promise.all(
+        data.map(async (client) => {
+          try {
+            const indicatorsRes = await fetch(`${API_URL}/clients/${client.id}/indicators`);
+            if (!indicatorsRes.ok) return [client.id, undefined] as const;
+            return [client.id, await indicatorsRes.json()] as const;
+          } catch {
+            return [client.id, undefined] as const;
+          }
+        })
+      );
+
+      setIndicatorsByClient(
+        Object.fromEntries(indicatorEntries.filter((entry): entry is readonly [string, ClientIndicators] => Boolean(entry[1])))
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchPeople = async () => {
+    try {
+      const res = await fetch(`${API_URL}/people`);
+      if (res.ok) setPeople(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchStakeholders = async () => {
+    try {
+      const res = await fetch(`${API_URL}/stakeholders`);
+      if (res.ok) setStakeholders(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchActionItems = async () => {
+    try {
+      const res = await fetch(`${API_URL}/action-items`);
+      if (res.ok) setActionItems(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchLabels();
+    fetchClients();
+    fetchPeople();
+    fetchStakeholders();
+    fetchActionItems();
+  }, []);
+
+  const handleAddLabel = async (name: string, color: string) => {
+    try {
+      await fetch(`${API_URL}/labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: `label_${Date.now()}`, name, color }),
+      });
+      fetchLabels();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRemoveLabel = async (id: string) => {
+    try {
+      await fetch(`${API_URL}/labels/${id}`, { method: 'DELETE' });
+      fetchLabels();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCreateClient = async (payload: { name: string; aliases: string[]; description: string }) => {
+    try {
+      const res = await fetch(`${API_URL}/clients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('create client failed');
+      showToast('Cliente criado com sucesso', 'success');
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao criar cliente', 'error');
+    }
+  };
+
+  const handleCreatePerson = async (payload: { name: string; email: string; client_ids: string[]; is_temporary: boolean }) => {
+    try {
+      const res = await fetch(`${API_URL}/people`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('create person failed');
+      showToast('Pessoa cadastrada', 'success');
+      await fetchPeople();
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao criar pessoa', 'error');
+    }
+  };
+
+  const handleCreateStakeholder = async (payload: { client_id: string; person_id: string; role: string; influence_level: string; is_primary: boolean }) => {
+    try {
+      const res = await fetch(`${API_URL}/stakeholders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('create stakeholder failed');
+      showToast('Stakeholder vinculado', 'success');
+      await fetchStakeholders();
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao vincular stakeholder', 'error');
+    }
+  };
+
+  const handleCreateActionItem = async (payload: { title: string; client_id?: string; meeting_id?: string; assignee_person_id?: string; priority: string }) => {
+    try {
+      const res = await fetch(`${API_URL}/action-items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          status: 'open',
+          source: 'manual',
+        }),
+      });
+      if (!res.ok) throw new Error('create action item failed');
+      showToast('Pendência criada', 'success');
+      await fetchActionItems();
+      await fetchClients();
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao criar pendência', 'error');
+    }
+  };
+
+  const handleClassifyMeeting = async (
+    meetingId: string,
+    payload: { client_id?: string | null; meeting_kind?: 'internal' | 'external' | '' }
+  ) => {
+    try {
+      const res = await fetch(`${API_URL}/meetings/${meetingId}/classification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('classify meeting failed');
+      showToast('Reunião classificada', 'success');
+      await fetchMeetings();
+      await fetchClients();
+      const updatedMeeting = meetings.find((item) => item.id === meetingId);
+      if (updatedMeeting) {
+        setSelectedMeeting({
+          ...updatedMeeting,
+          client_id: payload.client_id ?? null,
+          meeting_kind: (payload.meeting_kind || null) as Meeting['meeting_kind'],
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao classificar reunião', 'error');
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+  
+  const handleSelectAll = (ids: string[]) => {
+    setSelectedIds(ids);
+  };
+
+  const handleBulkArchive = async (ids: string[]) => {
+    if (!window.confirm(`Tem certeza que deseja arquivar ${ids.length} transcrição(ões)?`)) return;
+    try {
+      const res = await fetch(`${API_URL}/meetings/bulk-archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        showToast(`${ids.length} transcrições arquivadas`, 'success');
+        clearSelection();
+        fetchMeetings();
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao arquivar', 'error');
+    }
+  };
+
+  const handleBulkDelete = async (ids: string[]) => {
+    if (!window.confirm(`Tem certeza que deseja excluir ${ids.length} transcrição(ões)?`)) return;
+    try {
+      const res = await fetch(`${API_URL}/meetings/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (res.ok) {
+        showToast(`${ids.length} transcrições excluídas`, 'success');
+        clearSelection();
+        fetchMeetings();
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao excluir', 'error');
+    }
+  };
+
   const deleteMeeting = (id: string) => {
-    setMeetings((prev) => prev.filter((m) => m.id !== id));
+    handleBulkDelete([id]);
   };
 
   return (
@@ -944,6 +2003,33 @@ export default function App() {
             badge={meetings.filter((m) => m.status === 'done').length}
           />
           <SidebarItem
+            label="Clientes"
+            icon="#"
+            active={tab === 'clients'}
+            onClick={() => setTab('clients')}
+            badge={clients.length}
+          />
+          <SidebarItem
+            label="Pessoas"
+            icon="@"
+            active={tab === 'people'}
+            onClick={() => setTab('people')}
+            badge={people.length}
+          />
+          <SidebarItem
+            label="Pendencias"
+            icon=">"
+            active={tab === 'action-items'}
+            onClick={() => setTab('action-items')}
+            badge={actionItems.filter((item) => item.status !== 'done' && item.status !== 'cancelled').length}
+          />
+          <SidebarItem
+            label="Calendar"
+            icon="📅"
+            active={tab === 'calendar'}
+            onClick={() => setTab('calendar')}
+          />
+          <SidebarItem
             label="Settings"
             icon="⚙"
             active={tab === 'settings'}
@@ -974,9 +2060,11 @@ export default function App() {
         {tab === 'dashboard' && (
           <Dashboard
             isRecording={isRecording}
+            isPaused={isPaused}
             timer={timer}
             status={status}
             onToggle={handleToggleRecording}
+            onPauseResume={performPauseResume}
             micEnabled={settings.mic_enabled}
             sysEnabled={settings.system_enabled}
             realtimeSegments={realtimeSegments}
@@ -984,16 +2072,57 @@ export default function App() {
           />
         )}
         {tab === 'meetings' && (
-          <Meetings meetings={meetings} onOpen={openMeeting} onDelete={deleteMeeting} />
+          <Meetings 
+            meetings={meetings} 
+            onOpen={openMeeting} 
+            onDelete={(id) => handleBulkDelete([id])}
+            onBulkDelete={handleBulkDelete}
+            onBulkArchive={handleBulkArchive}
+            labels={labels}
+            selectedIds={selectedIds}
+            onToggleSelection={toggleSelection}
+            onClearSelection={clearSelection}
+            onSelectAll={handleSelectAll}
+          />
         )}
         {tab === 'transcription' && (
           <Transcription
             meeting={selectedMeeting}
             segments={meetingSegments}
+            labels={labels}
+            clients={clients}
             onBack={() => {
               setTab('meetings');
               setSelectedMeeting(null);
             }}
+            onLabelsUpdated={fetchMeetings}
+            onClassifyMeeting={handleClassifyMeeting}
+          />
+        )}
+        {tab === 'clients' && (
+          <ClientsPanel
+            clients={clients}
+            stakeholders={stakeholders}
+            indicatorsByClient={indicatorsByClient}
+            onCreateClient={handleCreateClient}
+          />
+        )}
+        {tab === 'people' && (
+          <PeoplePanel
+            people={people}
+            clients={clients}
+            stakeholders={stakeholders}
+            onCreatePerson={handleCreatePerson}
+            onCreateStakeholder={handleCreateStakeholder}
+          />
+        )}
+        {tab === 'action-items' && (
+          <ActionItemsPanel
+            actionItems={actionItems}
+            clients={clients}
+            people={people}
+            meetings={meetings}
+            onCreateActionItem={handleCreateActionItem}
           />
         )}
         {tab === 'settings' && (
@@ -1002,11 +2131,47 @@ export default function App() {
             onChange={setSettings}
             onSave={handleSave}
             saved={saved}
+            labels={labels}
+            onAddLabel={handleAddLabel}
+            onRemoveLabel={handleRemoveLabel}
           />
+        )}
+        {tab === 'calendar' && (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8">
+            <div className="w-16 h-16 rounded-2xl bg-gray-900 border border-gray-800 flex items-center justify-center text-2xl mb-4">
+              📅
+            </div>
+            <h2 className="text-xl font-bold text-gray-200 mb-2">Integração com Google Calendar</h2>
+            <p className="text-sm text-gray-500 max-w-sm mb-6">
+              Sincronize sua agenda para iniciar gravações automaticamente e associar reuniões aos eventos correspondentes.
+            </p>
+            <button className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-md transition-colors cursor-pointer border-none opacity-50 cursor-not-allowed">
+              Conectar Conta do Google (Em Breve)
+            </button>
+          </div>
         )}
       </div>
     </div>
       </DarkWindow>
+      
+      {toast && (
+        <div 
+          className="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 z-50 flex items-center gap-2"
+          style={{
+            background: toast.type === 'success' ? '#14532d' : '#7f1d1d',
+            color: toast.type === 'success' ? '#86efac' : '#fca5a5',
+            border: `1px solid ${toast.type === 'success' ? '#166534' : '#991b1b'}`,
+            animation: 'slide-up 0.3s ease-out forwards'
+          }}
+        >
+          {toast.type === 'success' ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+          )}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

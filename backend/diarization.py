@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from collections import defaultdict
 from vad import VAD
 
@@ -61,11 +62,47 @@ class SpeakerDiarizer:
         return aligned
 
 class DiarizationEngine:
-    def __init__(self):
+    def __init__(self, use_pyannote=True):
         self.diarizer = SpeakerDiarizer()
         self.audio_sources = {}
+        self.pipeline = None
+        if use_pyannote:
+            self.pipeline = self._load_pyannote_pipeline()
+
+    def _load_pyannote_pipeline(self):
+        try:
+            from pyannote.audio import Pipeline
+        except Exception:
+            return None
+
+        token = os.getenv("PYANNOTE_AUTH_TOKEN") or os.getenv("HF_TOKEN")
+        try:
+            return Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1",
+                use_auth_token=token,
+            )
+        except Exception as exc:
+            print(f"Pyannote diarization unavailable: {exc}")
+            return None
+
+    def _process_with_pyannote(self, wav_path):
+        diarization = self.pipeline(str(wav_path))
+        segments = []
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
+            segments.append({
+                "start": float(turn.start),
+                "end": float(turn.end),
+                "speaker": str(speaker),
+            })
+        return {"source": "pyannote", "segments": segments}
         
     def process_wav(self, wav_path):
+        if self.pipeline is not None:
+            try:
+                return self._process_with_pyannote(wav_path)
+            except Exception as e:
+                print(f"Pyannote diarization error: {e}")
+
         try:
             import soundfile as sf
             audio, sr = sf.read(wav_path)
@@ -77,10 +114,47 @@ class DiarizationEngine:
             return None
     
     def align_transcript(self, transcript, audio_sources):
+        if isinstance(audio_sources, dict) and isinstance(audio_sources.get("segments"), list):
+            return align_transcript_with_diarization(
+                transcript.get("segments", []),
+                audio_sources["segments"],
+            )
         return self.diarizer.align_transcript_to_speaker(
             transcript.get("segments", []),
             audio_sources
         )
+
+
+def _overlap_seconds(a_start, a_end, b_start, b_end):
+    return max(0.0, min(float(a_end), float(b_end)) - max(float(a_start), float(b_start)))
+
+
+def align_transcript_with_diarization(transcript_segments, diarization_segments):
+    aligned = []
+
+    for seg in transcript_segments:
+        seg_start = float(seg.get("start", 0))
+        seg_end = float(seg.get("end", seg_start))
+        best_speaker = None
+        best_overlap = 0.0
+
+        for diarized in diarization_segments:
+            overlap = _overlap_seconds(
+                seg_start,
+                seg_end,
+                diarized.get("start", 0),
+                diarized.get("end", 0),
+            )
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_speaker = diarized.get("speaker")
+
+        next_seg = dict(seg)
+        if best_speaker:
+            next_seg["speaker"] = best_speaker
+        aligned.append(next_seg)
+
+    return aligned
 
 def align_speakers_to_transcript(transcript_segments, mic_energies, system_energies):
     aligned = []

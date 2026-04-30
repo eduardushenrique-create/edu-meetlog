@@ -26,9 +26,11 @@ class TranscriptMergeEngine:
         self,
         overlap_policy: OverlapPolicy = "keep_both",
         score_resolver: Callable[[Mapping[str, Any]], tuple[float, float, float, int]] | None = None,
+        duplicate_text_window_secs: float = 20.0,
     ):
         self.overlap_policy = overlap_policy
         self.score_resolver = score_resolver
+        self.duplicate_text_window_secs = duplicate_text_window_secs
         self._stream_states: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
 
@@ -72,6 +74,8 @@ class TranscriptMergeEngine:
             for segment in normalized_incoming:
                 key = segment_key(segment)
                 if key in source_known_keys:
+                    continue
+                if self._is_recent_text_duplicate(source_segments, segment):
                     continue
                 source_known_keys.add(key)
                 source_segments.append(segment)
@@ -148,6 +152,8 @@ class TranscriptMergeEngine:
             key = segment_key(segment)
             if key in seen_keys:
                 continue
+            if self._is_recent_text_duplicate(deduped, segment):
+                continue
             seen_keys.add(key)
             deduped.append(dict(segment))
 
@@ -213,6 +219,30 @@ class TranscriptMergeEngine:
         right_end = float(right.get("end", right_start) or right_start)
 
         return left_start < right_end and right_start < left_end
+
+    def _is_recent_text_duplicate(
+        self,
+        existing_segments: Iterable[Mapping[str, Any]],
+        candidate: Mapping[str, Any],
+    ) -> bool:
+        candidate_text = " ".join(str(candidate.get("text", "")).strip().lower().split())
+        if not candidate_text:
+            return False
+
+        candidate_source = str(candidate.get("source", ""))
+        candidate_start = float(candidate.get("start", 0.0) or 0.0)
+
+        for existing in existing_segments:
+            existing_text = " ".join(str(existing.get("text", "")).strip().lower().split())
+            if existing_text != candidate_text:
+                continue
+            if str(existing.get("source", "")) != candidate_source:
+                continue
+            existing_start = float(existing.get("start", 0.0) or 0.0)
+            if abs(candidate_start - existing_start) <= self.duplicate_text_window_secs:
+                return True
+
+        return False
 
 
 def merge_segments(

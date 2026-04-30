@@ -37,6 +37,7 @@ const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 let mainWindow = null;
+let popupWindow = null;
 let pythonProcess = null;
 let isRecording = false;
 function getBackendPath() {
@@ -44,6 +45,12 @@ function getBackendPath() {
         return path.join(process.resourcesPath, 'backend', 'main.py');
     }
     return path.join(__dirname, '..', 'backend', 'main.py');
+}
+function getPythonCommand() {
+    if (electron_1.app.isPackaged) {
+        return path.join(process.resourcesPath, 'backend', 'venv', 'Scripts', 'python.exe');
+    }
+    return 'python';
 }
 function getHTMLPath() {
     if (electron_1.app.isPackaged) {
@@ -53,10 +60,15 @@ function getHTMLPath() {
 }
 function startBackend() {
     const backendPath = getBackendPath();
+    const pythonCommand = getPythonCommand();
     console.log('Starting backend from:', backendPath);
-    pythonProcess = (0, child_process_1.spawn)('python', [backendPath], {
+    console.log('Using Python command:', pythonCommand);
+    pythonProcess = (0, child_process_1.spawn)(pythonCommand, [backendPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd: electron_1.app.isPackaged ? path.dirname(backendPath) : undefined,
+    });
+    pythonProcess.on('error', (error) => {
+        console.error('Backend spawn failed:', error);
     });
     pythonProcess.stdout?.on('data', (data) => {
         console.log(`Backend: ${data}`);
@@ -125,13 +137,14 @@ function registerHotkeys() {
 }
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
-        width: 940,
-        height: 620,
+        width: 860,
+        height: 560,
         minWidth: 800,
-        minHeight: 600,
+        minHeight: 520,
         frame: false,
         transparent: true,
         resizable: true,
+        thickFrame: true,
         autoHideMenuBar: true,
         backgroundColor: '#00000000',
         webPreferences: {
@@ -140,9 +153,18 @@ function createWindow() {
             nodeIntegration: false,
         },
     });
+    mainWindow.setResizable(true);
+    mainWindow.setMinimumSize(800, 520);
     electron_1.ipcMain.on('window-minimize', minimizeApp);
     electron_1.ipcMain.on('window-maximize', maximizeApp);
     electron_1.ipcMain.on('window-close', closeApp);
+    electron_1.ipcMain.handle('select-output-folder', async () => {
+        const { dialog } = require('electron');
+        const result = await dialog.showOpenDialog(mainWindow, {
+            properties: ['openDirectory']
+        });
+        return result.canceled ? null : result.filePaths[0];
+    });
     const htmlPath = getHTMLPath();
     console.log('Loading HTML from:', htmlPath);
     const isDev = !electron_1.app.isPackaged || process.env.NODE_ENV === 'development';
@@ -161,6 +183,52 @@ function createWindow() {
         mainWindow = null;
     });
 }
+function createPopupWindow(title, message, action = 'start') {
+    if (popupWindow) {
+        popupWindow.close();
+    }
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width } = primaryDisplay.workAreaSize;
+    popupWindow = new electron_1.BrowserWindow({
+        width: 320,
+        height: 120,
+        x: width - 340,
+        y: 20,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+        }
+    });
+    const htmlPath = getHTMLPath();
+    const isDev = !electron_1.app.isPackaged || process.env.NODE_ENV === 'development';
+    const queryUrl = `?popup=true&title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}&action=${encodeURIComponent(action)}`;
+    if (isDev) {
+        popupWindow.loadURL(`http://localhost:5174${queryUrl}`);
+    }
+    else {
+        popupWindow.loadFile(htmlPath, { search: queryUrl });
+    }
+    setTimeout(() => {
+        if (popupWindow)
+            popupWindow.close();
+    }, 30000);
+}
+electron_1.ipcMain.on('show-overlay-popup', (_event, { title, message, action }) => {
+    createPopupWindow(title, message, action);
+});
+electron_1.ipcMain.on('close-overlay-popup', () => {
+    if (popupWindow) {
+        popupWindow.close();
+        popupWindow = null;
+    }
+});
 electron_1.app.whenReady().then(() => {
     startBackend();
     createWindow();

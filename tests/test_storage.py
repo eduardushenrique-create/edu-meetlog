@@ -89,14 +89,20 @@ class TestStorage:
     
     def test_done_queue(self):
         """Done queue exists"""
-        from main import DONE
+        from queue_worker import DONE
         
         assert DONE.exists()
 
 
 class TestQueueStorage:
     """Queue file storage tests"""
-    
+
+    @pytest.fixture
+    def temp_dir(self):
+        temp = tempfile.mkdtemp()
+        yield Path(temp)
+        shutil.rmtree(temp)
+
     def test_transcript_storage(self, temp_dir):
         """Transcript storage"""
         transcript = {"segments": [{"id": 0, "text": "Test"}]}
