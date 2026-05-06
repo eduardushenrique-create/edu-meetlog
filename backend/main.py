@@ -132,6 +132,8 @@ class Settings(BaseModel):
     workers: int = 2
     auto_start: bool = False
     output_folder: str = ""
+    beam_size_realtime: int = 1   # lower = faster real-time, less accurate
+    beam_size_batch: int = 5      # higher = better quality for finished recordings
 
 class ClientCreateRequest(BaseModel):
     id: Optional[str] = None
@@ -223,76 +225,90 @@ realtime_meeting_id = None
 realtime_offsets = {"mic": 0.0, "system": 0.0}
 realtime_session_start = None
 realtime_lock = threading.Lock()
+_offsets_lock = threading.Lock()
 
 def _broadcast_transcription_from_thread(payload: dict):
     manager.send_transcription_from_thread(payload)
 
-def _process_realtime_source_chunks(meeting_id: str, source: str, chunks: list):
+def _compute_source_offset(source: str, chunk_start_time, chunk_len: int) -> float:
+    """Compute time offset for a chunk and advance the running offset counter."""
     global realtime_offsets
-    global realtime_transcriber
-
-    if realtime_transcriber is None:
-        return
-
-    speaker = "user" if source == "mic" else "system"
-
-    for chunk_item in chunks:
-        chunk_start_time = None
-        chunk = chunk_item
-        if isinstance(chunk_item, tuple) and len(chunk_item) == 2:
-            chunk_start_time, chunk = chunk_item
-
-        if chunk is None or len(chunk) == 0:
-            continue
-
+    with _offsets_lock:
         if chunk_start_time is not None and realtime_session_start is not None:
             offset = max(0.0, float(chunk_start_time) - float(realtime_session_start))
             realtime_offsets[source] = max(
                 realtime_offsets[source],
-                offset + float(len(chunk)) / float(SAMPLE_RATE),
+                offset + float(chunk_len) / float(SAMPLE_RATE),
             )
         else:
             offset = realtime_offsets[source]
-            realtime_offsets[source] += float(len(chunk)) / float(SAMPLE_RATE)
+            realtime_offsets[source] += float(chunk_len) / float(SAMPLE_RATE)
+    return offset
 
-        segments = realtime_transcriber.transcribe_chunk(
-            chunk,
-            source=source,
-            speaker=speaker,
-            time_offset=offset,
-        )
-        if not segments:
-            continue
+def _on_segments_received(source: str, segments: list, meeting_id: str):
+    """GPU worker callback — runs in the GPU thread. Merge + broadcast."""
+    merge_result = realtime_merge_engine.merge_incremental(meeting_id, source, segments)
+    if not merge_result.new_segments:
+        return
+    _broadcast_transcription_from_thread({
+        "meeting_id": meeting_id,
+        "is_partial": True,
+        "segments": merge_result.new_segments,
+        "final_transcript": {
+            "segments": merge_result.merged_segments,
+        },
+    })
 
-        merge_result = realtime_merge_engine.merge_incremental(meeting_id, source, segments)
-        if not merge_result.new_segments:
-            continue
-
-        _broadcast_transcription_from_thread({
-            "meeting_id": meeting_id,
-            "is_partial": True,
-            "segments": merge_result.new_segments,
-            "final_transcript": {
-                "segments": merge_result.merged_segments,
-            },
-        })
-
-def _realtime_worker_loop(meeting_id: str):
-    global realtime_running
+def _cpu_source_worker(meeting_id: str, source: str):
+    """Per-source CPU thread: fetches chunks, trims silence, submits to GPU queue."""
+    global realtime_transcriber
     while realtime_running and app_state.get("current_meeting_id") == meeting_id:
         if app_state.get("state") == "PAUSED":
-            time.sleep(0.2)
+            time.sleep(0.1)
             continue
-        chunks = capture.get_realtime_chunks()
-        mic_chunks = chunks.get("mic", [])
-        system_chunks = chunks.get("system", [])
-        for chunk_item in mic_chunks:
-            chunk = chunk_item[1] if isinstance(chunk_item, tuple) and len(chunk_item) == 2 else chunk_item
-            if chunk is not None and len(chunk) > 0:
+
+        all_chunks = capture.get_realtime_chunks()
+        chunks = all_chunks.get(source, [])
+
+        for chunk_item in chunks:
+            chunk_start_time = None
+            chunk = chunk_item
+            if isinstance(chunk_item, tuple) and len(chunk_item) == 2:
+                chunk_start_time, chunk = chunk_item
+
+            if chunk is None or len(chunk) == 0:
+                continue
+
+            # Feed raw audio to meeting detector (mic source only)
+            if source == "mic":
                 meeting_detector.feed_audio(chunk)
-        _process_realtime_source_chunks(meeting_id, "mic", mic_chunks)
-        _process_realtime_source_chunks(meeting_id, "system", system_chunks)
-        time.sleep(0.2)
+
+            if realtime_transcriber is None:
+                continue
+
+            offset = _compute_source_offset(source, chunk_start_time, len(chunk))
+            # submit_chunk does CPU preprocessing (silence trim) on THIS thread,
+            # then enqueues preprocessed audio for the single GPU thread.
+            realtime_transcriber.submit_chunk(
+                chunk,
+                source=source,
+                time_offset=offset,
+            )
+
+        time.sleep(0.05)  # tight poll — CPU is cheap
+
+def _realtime_coordinator(meeting_id: str):
+    """Launches parallel CPU source threads and waits for them to finish."""
+    mic_t = threading.Thread(
+        target=_cpu_source_worker, args=(meeting_id, "mic"), daemon=True, name="rt-cpu-mic"
+    )
+    sys_t = threading.Thread(
+        target=_cpu_source_worker, args=(meeting_id, "system"), daemon=True, name="rt-cpu-system"
+    )
+    mic_t.start()
+    sys_t.start()
+    mic_t.join()
+    sys_t.join()
 
 def start_realtime_pipeline(meeting_id: str, model_name: str):
     global realtime_running, realtime_meeting_id, realtime_thread, realtime_offsets, realtime_session_start, realtime_transcriber
@@ -303,10 +319,25 @@ def start_realtime_pipeline(meeting_id: str, model_name: str):
         realtime_offsets = {"mic": 0.0, "system": 0.0}
         realtime_session_start = app_state.get("session_start") or time.time()
     realtime_merge_engine.clear_stream(meeting_id)
+
+    settings = load_settings()
+    beam_size_rt = int(settings.get("beam_size_realtime", 1))
+
     if realtime_transcriber is None or realtime_transcriber.model_name != model_name:
-        realtime_transcriber = RealtimeTranscriber(model_name=model_name)
-    realtime_transcriber.start()
-    realtime_thread = threading.Thread(target=_realtime_worker_loop, args=(meeting_id,), daemon=True)
+        realtime_transcriber = RealtimeTranscriber(model_name=model_name, beam_size_realtime=beam_size_rt)
+
+    # Pass a closure so the callback knows the meeting_id without a global lookup
+    def _result_cb(source: str, segments: list):
+        _on_segments_received(source, segments, meeting_id)
+
+    # Reuse the batch model if it's already loaded for this model_name
+    # (beam_size is a transcribe() param, not a model-load param — safe to share)
+    from queue_worker import model_cache as _batch_model_cache
+    shared_model = _batch_model_cache.get(model_name)
+    realtime_transcriber.start(result_callback=_result_cb, shared_model=shared_model)
+    realtime_thread = threading.Thread(
+        target=_realtime_coordinator, args=(meeting_id,), daemon=True, name="rt-coordinator"
+    )
     realtime_thread.start()
 
 def stop_realtime_pipeline():
@@ -351,10 +382,24 @@ def scan_output_folder_for_meetings():
                 })
             except: pass
 
+_DEFAULT_SETTINGS = {
+    "mic_enabled": True,
+    "system_enabled": False,
+    "model": "large-v3",
+    "workers": 2,
+    "auto_start": False,
+    "output_folder": "",
+    "beam_size_realtime": 1,   # low for latency; batch uses beam=5
+    "beam_size_batch": 5,
+}
+
 def load_settings():
     settings_file = CONFIG_DIR / "settings.json"
-    if settings_file.exists(): return json.loads(settings_file.read_text())
-    return {"mic_enabled": True, "system_enabled": False, "model": "large-v3", "workers": 2, "auto_start": False, "output_folder": ""}
+    if settings_file.exists():
+        stored = json.loads(settings_file.read_text())
+        # Back-fill new keys so old settings.json files still work
+        return {**_DEFAULT_SETTINGS, **stored}
+    return dict(_DEFAULT_SETTINGS)
 
 def save_settings(settings: dict):
     settings_file = CONFIG_DIR / "settings.json"
@@ -660,7 +705,23 @@ def get_status():
     if app_state["state"] == "RECORDING" and app_state["session_start"]:
         app_state["recording_duration"] = time.time() - app_state["session_start"]
     device_info = detect_device()
-    return {"state": app_state["state"], "recording_duration": app_state["recording_duration"], "mic_enabled": app_state["mic_enabled"], "system_enabled": app_state["system_enabled"], "queue_stats": get_queue_stats(), "settings": load_settings(), "meeting_id": app_state.get("current_meeting_id"), "gpu": {"available": device_info["cuda_available"], "device": device_info["device"], "compute_type": device_info["compute_type"], "gpu_info": device_info["gpu_info"]}}
+    latency = realtime_transcriber.get_latency_stats() if realtime_transcriber else {"last_ms": None, "avg_ms": None, "p95_ms": None, "total_chunks": 0}
+    return {
+        "state": app_state["state"],
+        "recording_duration": app_state["recording_duration"],
+        "mic_enabled": app_state["mic_enabled"],
+        "system_enabled": app_state["system_enabled"],
+        "queue_stats": get_queue_stats(),
+        "settings": load_settings(),
+        "meeting_id": app_state.get("current_meeting_id"),
+        "gpu": {
+            "available": device_info["cuda_available"],
+            "device": device_info["device"],
+            "compute_type": device_info["compute_type"],
+            "gpu_info": device_info["gpu_info"],
+        },
+        "inference_latency": latency,
+    }
 
 @app.get("/meetings")
 def get_meetings():

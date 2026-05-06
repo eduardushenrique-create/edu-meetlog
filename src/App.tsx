@@ -155,6 +155,8 @@ function Dashboard({
   sysEnabled,
   realtimeSegments = [],
   wsConnected = false,
+  inferenceLatency,
+  gpuInfo,
 }: {
   isRecording: boolean;
   isPaused: boolean;
@@ -166,6 +168,8 @@ function Dashboard({
   sysEnabled: boolean;
   realtimeSegments?: Segment[];
   wsConnected?: boolean;
+  inferenceLatency?: { last_ms: number | null; avg_ms: number | null; p95_ms: number | null; total_chunks: number } | null;
+  gpuInfo?: { device: string; compute_type: string } | null;
 }) {
   return (
     <div className="h-full flex flex-col gap-7" style={{ padding: '28px 32px' }}>
@@ -301,37 +305,79 @@ function Dashboard({
         </div>
       </div>
 
+      {isRecording && inferenceLatency && (inferenceLatency.total_chunks > 0 || inferenceLatency.avg_ms !== null) && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs tracking-widest text-gray-600 font-semibold">LATÊNCIA DE INFERÊNCIA</div>
+            <span className="text-[10px] text-gray-700 font-mono">
+              {gpuInfo ? `${gpuInfo.device.toUpperCase()} · ${gpuInfo.compute_type}` : 'CPU'}
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { label: 'Último', value: inferenceLatency.last_ms != null ? `${inferenceLatency.last_ms}ms` : '—', color: inferenceLatency.last_ms != null && inferenceLatency.last_ms < 500 ? '#22c55e' : '#f59e0b' },
+              { label: 'Média', value: inferenceLatency.avg_ms != null ? `${inferenceLatency.avg_ms}ms` : '—', color: inferenceLatency.avg_ms != null && inferenceLatency.avg_ms < 500 ? '#22c55e' : '#f59e0b' },
+              { label: 'P95', value: inferenceLatency.p95_ms != null ? `${inferenceLatency.p95_ms}ms` : '—', color: inferenceLatency.p95_ms != null && inferenceLatency.p95_ms < 1000 ? '#3b82f6' : '#ef4444' },
+              { label: 'Chunks', value: String(inferenceLatency.total_chunks), color: '#6b7280' },
+            ].map((item) => (
+              <div key={item.label} className="bg-gray-950 border border-gray-900 rounded-md p-2.5">
+                <div className="text-sm font-bold font-mono" style={{ color: item.value === '—' ? '#2a2a2a' : item.color }}>
+                  {item.value}
+                </div>
+                <div className="text-[10px] text-gray-700 mt-0.5 font-medium uppercase">{item.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {isRecording && (
         <div>
-          <div className="text-xs tracking-widest text-gray-600 font-semibold mb-2.5">TRANSCRIÇÃO EM TEMPO REAL</div>
-          <div className="bg-gray-950 border border-gray-900 rounded-md p-3 max-h-32 overflow-y-auto">
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}
-              />
-              <span className="text-xs text-gray-600">
-                {wsConnected ? 'Conectado' : 'Desconectado'}
-              </span>
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="text-xs tracking-widest text-gray-600 font-semibold">TRANSCRIÇÃO EM TEMPO REAL</div>
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-700'}`} />
+              <span className="text-xs text-gray-700">{wsConnected ? 'ao vivo' : 'offline'}</span>
             </div>
+          </div>
+          <div className="bg-gray-950 border border-gray-900 rounded-lg overflow-hidden" style={{ maxHeight: '160px', overflowY: 'auto' }}>
             {realtimeSegments.length > 0 ? (
-              <div className="flex flex-col gap-1">
-                {realtimeSegments.slice(-5).map((seg, i) => (
-                  <div key={i} className="text-sm">
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-xs font-medium mr-1.5 ${
-                        (seg.source || seg.speaker).toLowerCase() === 'system'
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : 'bg-green-500/20 text-green-400'
-                      }`}
-                    >
-                      {(seg.source || seg.speaker).toUpperCase()}
-                    </span>
-                    <span className="text-gray-300">{seg.text}</span>
-                  </div>
-                ))}
+              <div className="flex flex-col divide-y divide-gray-900">
+                {realtimeSegments.slice(-6).map((seg, i) => {
+                  const isMic = (seg.source || seg.speaker || '').toLowerCase() !== 'system';
+                  return (
+                    <div key={i} className="flex items-start gap-2.5 px-3 py-2">
+                      <div
+                        className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center text-[9px] font-bold"
+                        style={{
+                          background: isMic ? 'rgba(34,197,94,0.15)' : 'rgba(59,130,246,0.15)',
+                          color: isMic ? '#4ade80' : '#60a5fa',
+                          border: `1px solid ${isMic ? 'rgba(34,197,94,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                        }}
+                      >
+                        {isMic ? 'M' : 'S'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-[10px] font-semibold" style={{ color: isMic ? '#4ade80' : '#60a5fa' }}>
+                            {isMic ? 'Mic' : 'Sistema'}
+                          </span>
+                          {seg.start != null && (
+                            <span className="text-[10px] text-gray-700 font-mono">{formatSec(Math.floor(seg.start))}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-300 leading-relaxed" style={{ margin: 0 }}>{seg.text}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <span className="text-xs text-gray-700">Aguardando transcrição...</span>
+              <div className="flex items-center justify-center gap-2 py-6">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-800 animate-pulse" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-800 animate-pulse" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-800 animate-pulse" style={{ animationDelay: '300ms' }} />
+              </div>
             )}
           </div>
         </div>
@@ -443,104 +489,96 @@ function Meetings({
           </div>
         )}
         {filteredMeetings.length === 0 && (
-          <div className="text-gray-500 text-sm text-center mt-10">
-            Nenhuma transcrição encontrada.
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div
+              className="w-12 h-12 rounded-xl border border-gray-800 flex items-center justify-center mb-4"
+              style={{ background: '#111' }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+              </svg>
+            </div>
+            <div className="text-sm font-medium text-gray-400 mb-1">Nenhuma reunião encontrada</div>
+            <div className="text-xs text-gray-600 max-w-xs">
+              {showArchived
+                ? 'Nenhuma reunião arquivada.'
+                : 'Inicie uma gravação no Dashboard para criar sua primeira transcrição.'}
+            </div>
           </div>
         )}
-        {filteredMeetings.map((m) => (
-          <div
-            key={m.id}
-            className="flex items-center p-3 rounded-md border border-gray-950 bg-gray-950 cursor-pointer transition-all gap-3"
-            style={{ borderColor: '#181818' }}
-            onMouseEnter={(e) => {
-              const target = e.currentTarget as HTMLElement;
-              target.style.borderColor = '#2a2a2a';
-            }}
-            onMouseLeave={(e) => {
-              const target = e.currentTarget as HTMLElement;
-              target.style.borderColor = '#181818';
-            }}
-          >
-            <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-              <input 
-                type="checkbox" 
-                checked={selectedIds?.includes(m.id) || false} 
-                onChange={() => onToggleSelection?.(m.id)}
-                className="w-4 h-4 cursor-pointer accent-blue-600"
-              />
-            </div>
-            <div className="flex-1 min-w-0" onClick={() => onOpen(m)}>
+        {filteredMeetings.map((m) => {
+          const statusColors = {
+            done: { bg: 'rgba(34,197,94,0.08)', text: '#4ade80', border: 'rgba(34,197,94,0.2)', label: 'Concluído' },
+            processing: { bg: 'rgba(245,158,11,0.08)', text: '#fbbf24', border: 'rgba(245,158,11,0.2)', label: 'Processando' },
+            pending: { bg: 'rgba(99,102,241,0.08)', text: '#818cf8', border: 'rgba(99,102,241,0.2)', label: 'Na fila' },
+            failed: { bg: 'rgba(239,68,68,0.08)', text: '#f87171', border: 'rgba(239,68,68,0.2)', label: 'Falha' },
+          };
+          const sc = statusColors[m.status] || statusColors.done;
+          return (
+            <div
+              key={m.id}
+              className="group flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all"
+              style={{ borderColor: '#1a1a1a', background: '#0a0a0a' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#2a2a2a'; (e.currentTarget as HTMLElement).style.background = '#0d0d0d'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#1a1a1a'; (e.currentTarget as HTMLElement).style.background = '#0a0a0a'; }}
+            >
+              <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds?.includes(m.id) || false}
+                  onChange={() => onToggleSelection?.(m.id)}
+                  className="w-3.5 h-3.5 cursor-pointer accent-blue-600"
+                />
+              </div>
+
               <div
-                className="text-sm font-medium text-gray-200 mb-0.5 truncate"
-                style={{
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
+                className="w-8 h-8 rounded-md flex-shrink-0 flex items-center justify-center text-xs font-bold"
+                style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}
               >
-                {m.name}
-              </div>
-              <div className="flex gap-3 items-center">
-                <span className="text-xs text-gray-600">{m.date}</span>
-                <span className="text-xs text-gray-700 font-mono">{m.duration}</span>
-                {m.labels?.map(lblId => {
-                  const lbl = labels?.find(l => l.id === lblId);
-                  if (!lbl) return null;
-                  return (
-                    <span key={lblId} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: lbl.color + '20', color: lbl.color, border: `1px solid ${lbl.color}40` }}>
-                      {lbl.name}
-                    </span>
-                  );
-                })}
-                {m.status === 'processing' && (
-                  <span className="text-xs text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded font-semibold">
-                    PROCESSANDO
-                  </span>
-                )}
-                {m.status === 'failed' && (
-                  <span className="text-xs text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded font-semibold">
-                    FALHA
-                  </span>
+                {m.status === 'processing' ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                ) : m.status === 'failed' ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
                 )}
               </div>
-            </div>
-            <div className="flex gap-1.5 flex-shrink-0">
-              {m.status === 'done' && (
+
+              <div className="flex-1 min-w-0" onClick={() => onOpen(m)}>
+                <div className="text-sm font-medium text-gray-200 truncate mb-0.5">{m.name}</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-gray-600">{m.date}</span>
+                  {m.duration && <span className="text-[11px] text-gray-700 font-mono">{m.duration}</span>}
+                  {m.labels?.slice(0, 3).map(lblId => {
+                    const lbl = labels?.find((l: any) => l.id === lblId);
+                    if (!lbl) return null;
+                    return (
+                      <span key={lblId} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: lbl.color + '20', color: lbl.color, border: `1px solid ${lbl.color}40` }}>
+                        {lbl.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
+                  {sc.label.toUpperCase()}
+                </span>
                 <button
-                  className="bg-transparent border border-gray-800 text-gray-600 rounded px-2 py-1 text-xs cursor-pointer font-sans transition-all"
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#3b82f6';
-                    e.currentTarget.style.color = '#93b4fc';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#222';
-                    e.currentTarget.style.color = '#555';
-                  }}
+                  className="opacity-0 group-hover:opacity-100 bg-transparent border border-gray-800 text-gray-600 rounded px-2 py-1 text-xs cursor-pointer transition-all hover:border-red-800 hover:text-red-400"
+                  onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
                 >
-                  Export
+                  ×
                 </button>
-              )}
-              <button
-                className="bg-transparent border border-gray-800 text-gray-600 rounded px-2 py-1 text-xs cursor-pointer font-sans transition-all"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(m.id);
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#ef4444';
-                  e.currentTarget.style.color = '#f87171';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#222';
-                  e.currentTarget.style.color = '#555';
-                }}
-              >
-                Delete
-              </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -863,6 +901,8 @@ interface SettingsState {
   workers: number;
   auto_start: boolean;
   output_folder?: string;
+  beam_size_realtime?: number;
+  beam_size_batch?: number;
 }
 
 function SettingsPanel({
@@ -959,6 +999,42 @@ function SettingsPanel({
               >
                 +
               </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 bg-gray-950 rounded-md border border-gray-900">
+            <div>
+              <div className="text-sm font-medium">Precisão Tempo Real</div>
+              <div className="text-xs text-gray-600 mt-0.5">beam_size ao vivo — 1 = mais rápido, 5 = mais preciso</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onChange({ ...settings, beam_size_realtime: Math.max(1, (settings.beam_size_realtime ?? 1) - 1) })}
+                className="w-6 h-6 rounded border border-gray-800 bg-gray-900 text-gray-500 cursor-pointer text-sm"
+              >−</button>
+              <span className="font-mono text-sm font-semibold w-5 text-center">{settings.beam_size_realtime ?? 1}</span>
+              <button
+                onClick={() => onChange({ ...settings, beam_size_realtime: Math.min(5, (settings.beam_size_realtime ?? 1) + 1) })}
+                className="w-6 h-6 rounded border border-gray-800 bg-gray-900 text-gray-500 cursor-pointer text-sm"
+              >+</button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-3 bg-gray-950 rounded-md border border-gray-900">
+            <div>
+              <div className="text-sm font-medium">Precisão Batch</div>
+              <div className="text-xs text-gray-600 mt-0.5">beam_size para gravações finalizadas (1–10)</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onChange({ ...settings, beam_size_batch: Math.max(1, (settings.beam_size_batch ?? 5) - 1) })}
+                className="w-6 h-6 rounded border border-gray-800 bg-gray-900 text-gray-500 cursor-pointer text-sm"
+              >−</button>
+              <span className="font-mono text-sm font-semibold w-5 text-center">{settings.beam_size_batch ?? 5}</span>
+              <button
+                onClick={() => onChange({ ...settings, beam_size_batch: Math.min(10, (settings.beam_size_batch ?? 5) + 1) })}
+                className="w-6 h-6 rounded border border-gray-800 bg-gray-900 text-gray-500 cursor-pointer text-sm"
+              >+</button>
             </div>
           </div>
         </div>
@@ -1491,9 +1567,13 @@ export default function App() {
     workers: 2,
     auto_start: false,
     output_folder: '',
+    beam_size_realtime: 1,
+    beam_size_batch: 5,
   });
   const [saved, setSaved] = useState(false);
   const [status, setStatus] = useState({ pending: 0, processing: 0, done: 0, failed: 0 });
+  const [inferenceLatency, setInferenceLatency] = useState<{ last_ms: number | null; avg_ms: number | null; p95_ms: number | null; total_chunks: number } | null>(null);
+  const [gpuInfo, setGpuInfo] = useState<{ device: string; compute_type: string } | null>(null);
   const [realtimeSegments, setRealtimeSegments] = useState<Segment[]>([]);
   const [wsConnected, setWsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -1518,6 +1598,8 @@ export default function App() {
         setIsRecording(data.state === 'RECORDING');
         setSeconds(Math.floor(data.recording_duration));
         setStatus(data.queue_stats);
+        if (data.inference_latency) setInferenceLatency(data.inference_latency);
+        if (data.gpu) setGpuInfo({ device: data.gpu.device, compute_type: data.gpu.compute_type });
       }
     } catch (e) {
       console.error('API not reachable');
@@ -2069,6 +2151,8 @@ export default function App() {
             sysEnabled={settings.system_enabled}
             realtimeSegments={realtimeSegments}
             wsConnected={wsConnected}
+            inferenceLatency={inferenceLatency}
+            gpuInfo={gpuInfo}
           />
         )}
         {tab === 'meetings' && (

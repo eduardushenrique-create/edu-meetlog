@@ -1,3 +1,10 @@
+export interface InferenceLatency {
+  last_ms: number | null;
+  avg_ms: number | null;
+  p95_ms: number | null;
+  total_chunks: number;
+}
+
 export interface Status {
   state: 'IDLE' | 'RECORDING' | 'PROCESSING' | 'ERROR' | 'PAUSED';
   recording_duration: number;
@@ -10,6 +17,12 @@ export interface Status {
     failed: number;
   };
   settings: Settings;
+  inference_latency?: InferenceLatency;
+  gpu?: {
+    available: boolean;
+    device: string;
+    compute_type: string;
+  };
 }
 
 export interface Settings {
@@ -19,6 +32,8 @@ export interface Settings {
   workers: number;
   auto_start: boolean;
   output_folder: string;
+  beam_size_realtime?: number;
+  beam_size_batch?: number;
 }
 
 export interface Label {

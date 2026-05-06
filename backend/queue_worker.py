@@ -37,6 +37,16 @@ model_cache: dict[str, WhisperModel] = {}
 merge_engine = TranscriptMergeEngine(overlap_policy="keep_both")
 
 _MEETINGS_FILE = CONFIG_DIR / "meetings.json"
+_SETTINGS_FILE = CONFIG_DIR / "settings.json"
+
+def _load_beam_size_batch() -> int:
+    try:
+        if _SETTINGS_FILE.exists():
+            data = json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
+            return int(data.get("beam_size_batch", 5))
+    except Exception:
+        pass
+    return 5
 
 
 def _persist_meeting_status(meeting_id: str, status: str) -> None:
@@ -235,14 +245,14 @@ def get_model(model_name: str = "large-v3"):
         return model_cache[model_name]
 
 
-def transcribe_audio(audio_path: Path, model_name: str = "large-v3", audio_type: str = "mic") -> dict:
+def transcribe_audio(audio_path: Path, model_name: str = "large-v3", audio_type: str = "mic", beam_size: int = 5) -> dict:
     model = get_model(model_name)
 
     def _run(m):
         if audio_type in ("mic", "mixed"):
-            return transcribe_mic_audio(m, audio_path)
+            return transcribe_mic_audio(m, audio_path, beam_size=beam_size)
         if audio_type == "system":
-            return transcribe_system_audio(m, audio_path)
+            return transcribe_system_audio(m, audio_path, beam_size=beam_size)
         print(f"[queue] Unsupported audio type '{audio_type}', skipping file {audio_path.name}")
         return {"segments": []}
 
@@ -300,7 +310,7 @@ def process_file(audio_file: Path, model_name: str = "large-v3"):
 
     try:
         print(f"[queue] Starting transcription for {audio_file.name} (type: {audio_type}, model: {model_name})")
-        result = transcribe_audio(audio_file, model_name, audio_type)
+        result = transcribe_audio(audio_file, model_name, audio_type, beam_size=_load_beam_size_batch())
         print(f"[queue] Transcription finished for {audio_file.name}. Got {len(result.get('segments', []))} segments.")
 
         output_file = DONE / f"{meeting_id}_{audio_type}_{segment_index}.json"
